@@ -69,6 +69,7 @@
     button:disabled { opacity: 0.5; cursor: not-allowed; }
     #btnStart { background: linear-gradient(135deg, #339af0, #228be6); color: #fff; }
     #btnStop { background: #495057; color: #fff; }
+    #btnSwitch { background: rgba(255,255,255,0.15); color: #eee; flex: 0 0 auto; }
     .section-title {
       font-size: 14px;
       margin: 16px 0 8px;
@@ -130,6 +131,7 @@
   <div class="btn-wrap">
     <button id="btnStart">开始推流</button>
     <button id="btnStop" disabled>停止推流</button>
+    <button id="btnSwitch" disabled title="推流过程中可切换前后摄像头">切换摄像头</button>
   </div>
 
   <h2 class="section-title">识别记录</h2>
@@ -157,6 +159,7 @@
       const statusEl = document.getElementById('status');
       const btnStart = document.getElementById('btnStart');
       const btnStop = document.getElementById('btnStop');
+      const btnSwitch = document.getElementById('btnSwitch');
       const canvas = document.getElementById('canvas');
       const ctx = canvas.getContext('2d');
       const qrLogEl = document.getElementById('qrLog');
@@ -164,6 +167,7 @@
 
       let pc = null;
       let localStream = null;
+      let currentFacingMode = 'user';
       let qrRunning = false;
       let rafId = null;
       let lastQrData = '';
@@ -297,6 +301,45 @@
         renderLog();
       });
 
+      function getStream(facingMode) {
+        return navigator.mediaDevices.getUserMedia({
+          video: facingMode ? { facingMode: facingMode } : true,
+          audio: true
+        });
+      }
+
+      async function switchCamera() {
+        if (!localStream) return;
+        btnSwitch.disabled = true;
+        setStatus('正在切换摄像头…', 'pending');
+        var nextMode = currentFacingMode === 'user' ? 'environment' : 'user';
+        try {
+          var newStream = await getStream(nextMode);
+          if (pc) {
+            var senders = pc.getSenders();
+            var videoTrack = newStream.getVideoTracks()[0];
+            var audioTrack = newStream.getAudioTracks()[0];
+            for (var i = 0; i < senders.length; i++) {
+              if (senders[i].track && senders[i].track.kind === 'video' && videoTrack) {
+                await senders[i].replaceTrack(videoTrack);
+              }
+              if (senders[i].track && senders[i].track.kind === 'audio' && audioTrack) {
+                await senders[i].replaceTrack(audioTrack);
+              }
+            }
+          }
+          localStream.getTracks().forEach(function (t) { t.stop(); });
+          localStream = newStream;
+          localVideo.srcObject = localStream;
+          currentFacingMode = nextMode;
+          btnSwitch.textContent = currentFacingMode === 'user' ? '切换后摄' : '切换前摄';
+          setStatus('推流已连接，画面中的二维码会自动识别并保存', 'ok');
+        } catch (e) {
+          setStatus('切换失败: ' + (e.message || e.name) + '（可能只有一颗摄像头）', 'error');
+        }
+        btnSwitch.disabled = false;
+      }
+
       async function startPush() {
         if (!isSecureContext()) {
           setStatus('请用 HTTPS 或 localhost 打开此页后再试。', 'error');
@@ -306,10 +349,12 @@
         setStatus('正在获取摄像头/麦克风…', 'pending');
 
         try {
-          localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+          localStream = await getStream(currentFacingMode);
           localVideo.srcObject = localStream;
           setPreviewVisible(true);
           setStatus('已获取媒体，正在连接推流服务器…', 'pending');
+          btnSwitch.disabled = false;
+          btnSwitch.textContent = currentFacingMode === 'user' ? '切换后摄' : '切换前摄';
           startQrLoop();
         } catch (e) {
           setStatus(getMediaErrorMessage(e), 'error');
@@ -358,6 +403,8 @@
       }
 
       function stopPush() {
+        btnSwitch.disabled = true;
+        btnSwitch.textContent = '切换摄像头';
         stopQrLoop();
         if (pc) {
           pc.close();
@@ -376,6 +423,7 @@
 
       btnStart.addEventListener('click', startPush);
       btnStop.addEventListener('click', stopPush);
+      btnSwitch.addEventListener('click', switchCamera);
     })();
   </script>
 </body>
