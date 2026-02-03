@@ -118,6 +118,11 @@
     .play-item { margin: 6px 0; word-break: break-all; }
     .play-item a { color: #74c0fc; text-decoration: none; }
     .play-item a:active { opacity: 0.8; }
+    .audio-play-wrap { display: flex; gap: 12px; margin-top: 12px; align-items: center; flex-wrap: wrap; }
+    .audio-play-wrap button { flex: 0 0 auto; padding: 10px 16px; font-size: 14px; }
+    #btnPlayAudio { background: #2f9e44; color: #fff; }
+    #btnStopAudio { background: #495057; color: #fff; }
+    #remoteAudio { display: none; }
   </style>
 </head>
 <body>
@@ -144,12 +149,19 @@
     <p class="play-item"><strong>HTTP-FLV</strong> <a href="https://live.h3r.website/live/livestream.flv" target="_blank" rel="noopener">https://live.h3r.website/live/livestream.flv</a></p>
     <p class="play-item"><strong>HLS</strong> <a href="https://live.h3r.website/live/livestream.m3u8" target="_blank" rel="noopener">https://live.h3r.website/live/livestream.m3u8</a></p>
     <p class="play-item"><strong>WebRTC (WHEP)</strong> <a href="https://live.h3r.website/rtc/v1/whep/?app=live&stream=livestream" target="_blank" rel="noopener">https://live.h3r.website/rtc/v1/whep/?app=live&stream=livestream</a></p>
+    <div class="audio-play-wrap">
+      <span class="play-title" style="margin:0;">纯音频流 (WebRTC)</span>
+      <button type="button" id="btnPlayAudio">播放音频</button>
+      <button type="button" id="btnStopAudio" disabled>停止音频</button>
+    </div>
   </section>
+  <audio id="remoteAudio" autoplay playsinline></audio>
 
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
   <script>
     (function () {
       const WHIP_URL = 'https://live.h3r.website/rtc/v1/whip/?app=live&stream=livestream&secret=125be909b4d042e1872fc5bf7507821d';
+      const WHEP_AUDIO_URL = 'https://live.h3r.website/rtc/v1/whep/?app=live&stream=audio';
       const STORAGE_KEY = 'liveh5_qr_results';
       const DEDUPE_MS = 3000;
       const MAX_ITEMS = 200;
@@ -160,6 +172,9 @@
       const btnStart = document.getElementById('btnStart');
       const btnStop = document.getElementById('btnStop');
       const btnSwitch = document.getElementById('btnSwitch');
+      const btnPlayAudio = document.getElementById('btnPlayAudio');
+      const btnStopAudio = document.getElementById('btnStopAudio');
+      const remoteAudio = document.getElementById('remoteAudio');
       const canvas = document.getElementById('canvas');
       const ctx = canvas.getContext('2d');
       const qrLogEl = document.getElementById('qrLog');
@@ -168,6 +183,8 @@
       let pc = null;
       let localStream = null;
       let currentFacingMode = 'user';
+      let playPc = null;
+      let whepResourceUrl = null;
       let qrRunning = false;
       let rafId = null;
       let lastQrData = '';
@@ -420,6 +437,76 @@
         btnStart.disabled = false;
         btnStop.disabled = true;
       }
+
+      async function startAudioPlay() {
+        if (playPc) return;
+        btnPlayAudio.disabled = true;
+        setStatus('正在连接音频流…', 'pending');
+        try {
+          var res = await fetch(WHEP_AUDIO_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/sdp' },
+            body: ''
+          });
+          if (!res.ok) {
+            var text = await res.text();
+            throw new Error('服务器 ' + res.status + (text ? ': ' + text.slice(0, 150) : ''));
+          }
+          whepResourceUrl = res.headers.get('Location') || res.url;
+          var offerSdp = await res.text();
+          playPc = new RTCPeerConnection({
+            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+          });
+          playPc.ontrack = function (e) {
+            if (e.streams && e.streams[0]) {
+              remoteAudio.srcObject = e.streams[0];
+            } else if (e.track) {
+              var s = new MediaStream();
+              s.addTrack(e.track);
+              remoteAudio.srcObject = s;
+            }
+          };
+          playPc.addEventListener('connectionstatechange', function () {
+            if (playPc && playPc.connectionState === 'failed') {
+              setStatus('音频连接失败', 'error');
+            }
+          });
+          await playPc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
+          var answer = await playPc.createAnswer();
+          await playPc.setLocalDescription(answer);
+          var patchRes = await fetch(whepResourceUrl, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/sdp' },
+            body: playPc.localDescription.sdp
+          });
+          if (!patchRes.ok) {
+            var t = await patchRes.text();
+            throw new Error('PATCH ' + patchRes.status + (t ? ': ' + t.slice(0, 100) : ''));
+          }
+          setStatus('音频流已连接，正在播放', 'ok');
+          btnPlayAudio.disabled = true;
+          btnStopAudio.disabled = false;
+        } catch (e) {
+          setStatus('播放音频失败: ' + (e.message || e.name), 'error');
+          stopAudioPlay();
+          btnPlayAudio.disabled = false;
+        }
+      }
+
+      function stopAudioPlay() {
+        if (playPc) {
+          playPc.close();
+          playPc = null;
+        }
+        whepResourceUrl = null;
+        remoteAudio.srcObject = null;
+        btnPlayAudio.disabled = false;
+        btnStopAudio.disabled = true;
+        if (!localStream && !pc) setStatus('就绪', 'pending');
+      }
+
+      btnPlayAudio.addEventListener('click', startAudioPlay);
+      btnStopAudio.addEventListener('click', stopAudioPlay);
 
       btnStart.addEventListener('click', startPush);
       btnStop.addEventListener('click', stopPush);
