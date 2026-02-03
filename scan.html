@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>扫二维码</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      min-height: 100vh;
+    }
+    h1 { font-size: 18px; margin: 0 0 12px; color: #fff; }
+    .video-wrap {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 1;
+      max-width: 320px;
+      margin: 0 auto 16px;
+      background: #0f0f1a;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    #video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    #canvas { display: none; }
+    .result {
+      padding: 12px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 8px;
+      font-size: 13px;
+      word-break: break-all;
+      min-height: 44px;
+    }
+    .result.empty { color: #868e96; }
+    .result.ok { color: #51cf66; }
+    .btn-wrap { margin-top: 16px; }
+    button {
+      width: 100%;
+      padding: 14px;
+      font-size: 16px;
+      font-weight: 600;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      background: #339af0;
+      color: #fff;
+    }
+    button:active { opacity: 0.8; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .nav-link {
+      display: inline-block;
+      margin-top: 16px;
+      color: #74c0fc;
+      font-size: 14px;
+      text-decoration: none;
+    }
+    .nav-link:active { opacity: 0.8; }
+  </style>
+</head>
+<body>
+  <h1>扫二维码</h1>
+  <div class="video-wrap">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas"></canvas>
+  </div>
+  <div class="result empty" id="result">将二维码对准框内，自动识别</div>
+  <div class="btn-wrap">
+    <button id="btnToggle">停止扫码</button>
+  </div>
+  <a href="index.html" class="nav-link">返回推流</a>
+
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+  <script>
+    (function () {
+      const video = document.getElementById('video');
+      const canvas = document.getElementById('canvas');
+      const ctx = canvas.getContext('2d');
+      const resultEl = document.getElementById('result');
+      const btnToggle = document.getElementById('btnToggle');
+
+      let stream = null;
+      let running = false;
+      let rafId = null;
+
+      function setResult(text, ok) {
+        resultEl.textContent = text || '将二维码对准框内，自动识别';
+        resultEl.className = 'result ' + (ok ? 'ok' : 'empty');
+      }
+
+      function stopScan() {
+        running = false;
+        if (rafId) cancelAnimationFrame(rafId);
+        if (stream) {
+          stream.getTracks().forEach(function (t) { t.stop(); });
+          stream = null;
+        }
+        video.srcObject = null;
+        btnToggle.textContent = '开始扫码';
+        setResult('已停止', false);
+      }
+
+      function tick() {
+        if (!running || !video.videoWidth) {
+          rafId = requestAnimationFrame(tick);
+          return;
+        }
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, imageData.width, imageData.height);
+        if (code) {
+          setResult(code.data, true);
+          return;
+        }
+        rafId = requestAnimationFrame(tick);
+      }
+
+      async function startScan() {
+        setResult('正在请求摄像头…', false);
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+          video.srcObject = stream;
+          running = true;
+          btnToggle.textContent = '停止扫码';
+          setResult('将二维码对准框内，自动识别', false);
+          tick();
+        } catch (e) {
+          setResult('获取摄像头失败: ' + (e.message || e.name), false);
+        }
+      }
+
+      btnToggle.addEventListener('click', function () {
+        if (running) stopScan();
+        else startScan();
+      });
+
+      startScan();
+    })();
+  </script>
+</body>
+</html>
