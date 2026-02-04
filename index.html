@@ -146,9 +146,9 @@
   <p class="tip">需用 <strong>HTTPS 或 localhost</strong> 打开此页。推流时会对画面做二维码识别，结果会显示在上方并自动保存。</p>
   <section class="play-urls">
     <h2 class="play-title">观看地址</h2>
-    <p class="play-item"><strong>HTTP-FLV</strong> <a href="https://live.h3r.website/live/livestream.flv" target="_blank" rel="noopener">https://live.h3r.website/live/livestream.flv</a></p>
-    <p class="play-item"><strong>HLS</strong> <a href="https://live.h3r.website/live/livestream.m3u8" target="_blank" rel="noopener">https://live.h3r.website/live/livestream.m3u8</a></p>
-    <p class="play-item"><strong>WebRTC (WHEP)</strong> <a href="https://live.h3r.website/rtc/v1/whep/?app=live&stream=livestream" target="_blank" rel="noopener">https://live.h3r.website/rtc/v1/whep/?app=live&stream=livestream</a></p>
+    <p class="play-item"><strong>HTTP-FLV</strong> <a href="https://livenew.h3r.website/live/livestream.flv" target="_blank" rel="noopener">https://livenew.h3r.website/live/livestream.flv</a></p>
+    <p class="play-item"><strong>HLS</strong> <a href="https://livenew.h3r.website/live/livestream.m3u8" target="_blank" rel="noopener">https://livenew.h3r.website/live/livestream.m3u8</a></p>
+    <p class="play-item"><strong>WebRTC (WHEP)</strong> <a href="https://livenew.h3r.website/rtc/v1/whep/?app=live&stream=livestream" target="_blank" rel="noopener">https://livenew.h3r.website/rtc/v1/whep/?app=live&stream=livestream</a></p>
     <div class="audio-play-wrap">
       <span class="play-title" style="margin:0;">纯音频流 (WebRTC)</span>
       <button type="button" id="btnPlayAudio">播放音频</button>
@@ -160,8 +160,8 @@
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
   <script>
     (function () {
-      const WHIP_URL = 'https://live.h3r.website/rtc/v1/whip/?app=live&stream=livestream&secret=125be909b4d042e1872fc5bf7507821d';
-      const WHEP_AUDIO_URL = 'https://live.h3r.website/rtc/v1/whep/?app=live&stream=audio&secret=125be909b4d042e1872fc5bf7507821d';
+      const WHIP_URL = 'https://livenew.h3r.website/rtc/v1/whip/?app=live&stream=livestream&secret=125be909b4d042e1872fc5bf7507821d';
+      const WHEP_AUDIO_URL = 'https://livenew.h3r.website/rtc/v1/whep/?app=live&stream=audio&secret=125be909b4d042e1872fc5bf7507821d';
       const STORAGE_KEY = 'liveh5_qr_results';
       const DEDUPE_MS = 3000;
       const MAX_ITEMS = 200;
