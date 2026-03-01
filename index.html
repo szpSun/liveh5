@@ -101,6 +101,23 @@
       color: #eee;
       width: 100%;
     }
+    .qr-frame-wrap {
+      margin-top: 12px;
+      padding: 12px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 8px;
+    }
+    .qr-frame-wrap .section-title { margin-top: 0; }
+    #qrFrameDisplay {
+      display: block;
+      max-width: 100%;
+      width: 100%;
+      max-height: 40vh;
+      object-fit: contain;
+      border-radius: 8px;
+      background: #0f0f1a;
+    }
+    .qr-frame-empty { color: #868e96; font-size: 13px; text-align: center; padding: 24px; }
     .tip {
       font-size: 12px;
       color: #868e96;
@@ -143,7 +160,13 @@
   <div class="qr-log" id="qrLog"></div>
   <button type="button" class="btn-clear" id="btnClearLog">清空记录</button>
 
-  <p class="tip">需用 <strong>HTTPS 或 localhost</strong> 打开此页。推流时会对画面做二维码识别，结果会显示在上方并自动保存。</p>
+  <h2 class="section-title">识别时的画面</h2>
+  <div class="qr-frame-wrap">
+    <img id="qrFrameDisplay" alt="识别到二维码时的画面" style="display: none;" />
+    <div class="qr-frame-empty" id="qrFrameEmpty">暂无，识别到二维码后会显示该帧</div>
+  </div>
+
+  <p class="tip">需用 <strong>HTTPS 或 localhost</strong> 打开此页。推流时会对画面做二维码识别，结果会显示在上方并自动保存；<strong>识别到二维码时会在下方显示该帧画面</strong>（同一二维码 3 秒内不重复更新）。</p>
   <section class="play-urls">
     <h2 class="play-title">观看地址</h2>
     <p class="play-item"><strong>HTTP-FLV</strong> <a href="https://livenew.h3r.website/live/szp.flv" target="_blank" rel="noopener">https://livenew.h3r.website/live/szp.flv</a></p>
@@ -179,6 +202,8 @@
       const ctx = canvas.getContext('2d');
       const qrLogEl = document.getElementById('qrLog');
       const btnClearLog = document.getElementById('btnClearLog');
+      const qrFrameDisplay = document.getElementById('qrFrameDisplay');
+      const qrFrameEmpty = document.getElementById('qrFrameEmpty');
 
       let pc = null;
       let localStream = null;
@@ -246,13 +271,24 @@
 
       function addResult(data) {
         const now = Date.now();
-        if (data === lastQrData && (now - lastQrTime) < DEDUPE_MS) return;
+        if (data === lastQrData && (now - lastQrTime) < DEDUPE_MS) return false;
         lastQrData = data;
         lastQrTime = now;
         const list = loadResults();
         list.push({ data: data, time: now });
         saveResults(list);
         renderLog();
+        return true;
+      }
+
+      function saveFrameAsScreenshot() {
+        if (!canvas.width || !canvas.height) return;
+        try {
+          const dataUrl = canvas.toDataURL('image/png');
+          qrFrameDisplay.src = dataUrl;
+          qrFrameDisplay.style.display = 'block';
+          qrFrameEmpty.style.display = 'none';
+        } catch (_) {}
       }
 
       function renderLog() {
@@ -297,7 +333,9 @@
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const code = typeof jsQR !== 'undefined' && jsQR(imageData.data, imageData.width, imageData.height);
         if (code && code.data) {
-          addResult(code.data);
+          if (addResult(code.data)) {
+            saveFrameAsScreenshot();
+          }
         }
         rafId = requestAnimationFrame(qrTick);
       }
@@ -316,6 +354,9 @@
       btnClearLog.addEventListener('click', function () {
         saveResults([]);
         renderLog();
+        qrFrameDisplay.removeAttribute('src');
+        qrFrameDisplay.style.display = 'none';
+        qrFrameEmpty.style.display = 'block';
       });
 
       function getStream(facingMode) {
