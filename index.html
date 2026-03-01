@@ -80,17 +80,29 @@
       background: rgba(255,255,255,0.06);
       border-radius: 8px;
       font-size: 12px;
-      max-height: 28vh;
+      max-height: 50vh;
       overflow-y: auto;
     }
     .qr-log-item {
-      margin: 8px 0;
-      padding: 8px 10px;
-      background: rgba(0,0,0,0.2);
-      border-radius: 6px;
+      margin: 12px 0;
+      padding: 10px;
+      background: rgba(0,0,0,0.25);
+      border-radius: 8px;
       word-break: break-all;
       border-left: 3px solid #51cf66;
     }
+    .qr-log-item:first-child { margin-top: 0; }
+    .qr-log-item-frame {
+      display: block;
+      width: 100%;
+      max-height: 28vh;
+      object-fit: contain;
+      border-radius: 6px;
+      background: #0f0f1a;
+      margin-bottom: 8px;
+    }
+    .qr-log-item-meta { color: #868e96; font-size: 11px; margin-bottom: 4px; }
+    .qr-log-item-data { font-size: 12px; }
     .qr-log-item time { color: #868e96; font-size: 11px; margin-right: 8px; }
     .qr-log-empty { color: #868e96; }
     .btn-clear {
@@ -101,23 +113,6 @@
       color: #eee;
       width: 100%;
     }
-    .qr-frame-wrap {
-      margin-top: 12px;
-      padding: 12px;
-      background: rgba(255,255,255,0.06);
-      border-radius: 8px;
-    }
-    .qr-frame-wrap .section-title { margin-top: 0; }
-    #qrFrameDisplay {
-      display: block;
-      max-width: 100%;
-      width: 100%;
-      max-height: 40vh;
-      object-fit: contain;
-      border-radius: 8px;
-      background: #0f0f1a;
-    }
-    .qr-frame-empty { color: #868e96; font-size: 13px; text-align: center; padding: 24px; }
     .tip {
       font-size: 12px;
       color: #868e96;
@@ -160,13 +155,7 @@
   <div class="qr-log" id="qrLog"></div>
   <button type="button" class="btn-clear" id="btnClearLog">清空记录</button>
 
-  <h2 class="section-title">识别时的画面</h2>
-  <div class="qr-frame-wrap">
-    <img id="qrFrameDisplay" alt="识别到二维码时的画面" style="display: none;" />
-    <div class="qr-frame-empty" id="qrFrameEmpty">暂无，识别到二维码后会显示该帧</div>
-  </div>
-
-  <p class="tip">需用 <strong>HTTPS 或 localhost</strong> 打开此页。推流时会对画面做二维码识别，结果会显示在上方并自动保存；<strong>识别到二维码时会在下方显示该帧画面</strong>（同一二维码 3 秒内不重复更新）。</p>
+  <p class="tip">需用 <strong>HTTPS 或 localhost</strong> 打开此页。推流时会对画面做二维码识别，<strong>每次识别到二维码会保存该帧画面与内容</strong>，显示在下方的识别记录中（同一二维码 3 秒内不重复）。</p>
   <section class="play-urls">
     <h2 class="play-title">观看地址</h2>
     <p class="play-item"><strong>HTTP-FLV</strong> <a href="https://livenew.h3r.website/live/szp.flv" target="_blank" rel="noopener">https://livenew.h3r.website/live/szp.flv</a></p>
@@ -187,7 +176,7 @@
       const WHEP_AUDIO_URL = 'https://livenew.h3r.website/rtc/v1/whep/?app=live&stream=audio&secret=18d44630c086480783f62f33dbb7e09a';
       const STORAGE_KEY = 'liveh5_qr_results';
       const DEDUPE_MS = 3000;
-      const MAX_ITEMS = 200;
+      const MAX_ITEMS = 30;
 
       const localVideo = document.getElementById('localVideo');
       const placeholder = document.getElementById('placeholder');
@@ -202,8 +191,6 @@
       const ctx = canvas.getContext('2d');
       const qrLogEl = document.getElementById('qrLog');
       const btnClearLog = document.getElementById('btnClearLog');
-      const qrFrameDisplay = document.getElementById('qrFrameDisplay');
-      const qrFrameEmpty = document.getElementById('qrFrameEmpty');
 
       let pc = null;
       let localStream = null;
@@ -269,32 +256,22 @@
         return trimmed;
       }
 
-      function addResult(data) {
+      function addResult(data, frameDataUrl) {
         const now = Date.now();
         if (data === lastQrData && (now - lastQrTime) < DEDUPE_MS) return false;
         lastQrData = data;
         lastQrTime = now;
         const list = loadResults();
-        list.push({ data: data, time: now });
+        list.push({ data: data, time: now, frameDataUrl: frameDataUrl || null });
         saveResults(list);
         renderLog();
         return true;
       }
 
-      function saveFrameAsScreenshot() {
-        if (!canvas.width || !canvas.height) return;
-        try {
-          const dataUrl = canvas.toDataURL('image/png');
-          qrFrameDisplay.src = dataUrl;
-          qrFrameDisplay.style.display = 'block';
-          qrFrameEmpty.style.display = 'none';
-        } catch (_) {}
-      }
-
       function renderLog() {
         const list = loadResults();
         if (list.length === 0) {
-          qrLogEl.innerHTML = '<div class="qr-log-empty">暂无记录，推流后对准二维码即可识别并保存</div>';
+          qrLogEl.innerHTML = '<div class="qr-log-empty">暂无记录，推流后对准二维码即可识别并保存（每条会显示该帧画面与扫到的内容）</div>';
           return;
         }
         qrLogEl.innerHTML = list
@@ -303,7 +280,10 @@
           .map(function (item) {
             const t = new Date(item.time);
             const timeStr = t.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            return '<div class="qr-log-item"><time>' + timeStr + '</time>' + escapeHtml(item.data) + '</div>';
+            const imgHtml = item.frameDataUrl
+              ? '<img class="qr-log-item-frame" src="' + item.frameDataUrl.replace(/"/g, '&quot;') + '" alt="识别时的画面" />'
+              : '';
+            return '<div class="qr-log-item">' + imgHtml + '<div class="qr-log-item-meta"><time>' + timeStr + '</time></div><div class="qr-log-item-data">' + escapeHtml(item.data) + '</div></div>';
           })
           .join('');
       }
@@ -333,9 +313,8 @@
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const code = typeof jsQR !== 'undefined' && jsQR(imageData.data, imageData.width, imageData.height);
         if (code && code.data) {
-          if (addResult(code.data)) {
-            saveFrameAsScreenshot();
-          }
+          var frameDataUrl = (canvas.width && canvas.height) ? canvas.toDataURL('image/png') : null;
+          addResult(code.data, frameDataUrl);
         }
         rafId = requestAnimationFrame(qrTick);
       }
@@ -354,9 +333,6 @@
       btnClearLog.addEventListener('click', function () {
         saveResults([]);
         renderLog();
-        qrFrameDisplay.removeAttribute('src');
-        qrFrameDisplay.style.display = 'none';
-        qrFrameEmpty.style.display = 'block';
       });
 
       function getStream(facingMode) {
