@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>推流 + 二维码识别</title>
+  <title>登录 / 注册</title>
   <style>
     * { box-sizing: border-box; }
     body {
@@ -13,521 +13,254 @@
       background: #1a1a2e;
       color: #eee;
       min-height: 100vh;
-    }
-    h1 { font-size: 18px; margin: 0 0 12px; color: #fff; }
-    .preview-wrap {
-      position: relative;
-      width: 100%;
-      aspect-ratio: 9/16;
-      max-height: 45vh;
-      background: #0f0f1a;
-      border-radius: 12px;
-      overflow: hidden;
-      margin-bottom: 12px;
-    }
-    #localVideo {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      transform: scaleX(-1);
-    }
-    .preview-placeholder {
-      position: absolute;
-      inset: 0;
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
-      color: #666;
-      font-size: 14px;
+    }
+    .auth-card {
+      width: 100%;
+      max-width: 360px;
+      padding: 24px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 16px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    }
+    h1 {
+      font-size: 20px;
+      margin: 0 0 20px;
+      color: #fff;
       text-align: center;
-      padding: 16px;
     }
-    #canvas { display: none; }
-    .status {
-      padding: 10px 12px;
-      background: rgba(255,255,255,0.08);
-      border-radius: 8px;
+    .auth-panel { display: none; }
+    .auth-panel.active { display: block; }
+    .auth-panel .form-group {
+      margin-bottom: 16px;
+    }
+    .auth-panel label {
+      display: block;
       font-size: 13px;
-      margin-bottom: 12px;
-      min-height: 40px;
+      color: #adb5bd;
+      margin-bottom: 6px;
     }
-    .status.error { color: #ff6b6b; }
-    .status.ok { color: #51cf66; }
-    .status.pending { color: #ffd43b; }
-    .btn-wrap { display: flex; gap: 12px; margin-bottom: 12px; }
-    button {
-      flex: 1;
-      padding: 14px 20px;
+    .auth-panel input {
+      width: 100%;
+      padding: 12px 14px;
+      font-size: 16px;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 10px;
+      background: rgba(0,0,0,0.2);
+      color: #eee;
+      outline: none;
+    }
+    .auth-panel input::placeholder { color: #868e96; }
+    .auth-panel input:focus { border-color: #339af0; }
+    .auth-panel .btn-submit {
+      width: 100%;
+      padding: 14px;
       font-size: 16px;
       font-weight: 600;
       border: none;
       border-radius: 10px;
       cursor: pointer;
-      transition: opacity 0.2s;
-    }
-    button:active { opacity: 0.8; }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
-    #btnStart { background: linear-gradient(135deg, #339af0, #228be6); color: #fff; }
-    #btnStop { background: #495057; color: #fff; }
-    #btnSwitch { background: rgba(255,255,255,0.15); color: #eee; flex: 0 0 auto; }
-    .section-title {
-      font-size: 14px;
-      margin: 16px 0 8px;
+      margin-top: 8px;
+      background: linear-gradient(135deg, #339af0, #228be6);
       color: #fff;
     }
-    .qr-log {
-      padding: 12px;
-      background: rgba(255,255,255,0.06);
-      border-radius: 8px;
-      font-size: 12px;
-      max-height: 50vh;
-      overflow-y: auto;
-    }
-    .qr-log-item {
-      margin: 12px 0;
-      padding: 10px;
-      background: rgba(0,0,0,0.25);
-      border-radius: 8px;
-      word-break: break-all;
-      border-left: 3px solid #51cf66;
-    }
-    .qr-log-item:first-child { margin-top: 0; }
-    .qr-log-item-frame {
-      display: block;
-      width: 100%;
-      max-height: 28vh;
-      object-fit: contain;
-      border-radius: 6px;
-      background: #0f0f1a;
-      margin-bottom: 8px;
-    }
-    .qr-log-item-meta { color: #868e96; font-size: 11px; margin-bottom: 4px; }
-    .qr-log-item-data { font-size: 12px; }
-    .qr-log-item time { color: #868e96; font-size: 11px; margin-right: 8px; }
-    .qr-log-empty { color: #868e96; }
-    .btn-clear {
-      margin-top: 8px;
-      padding: 8px 14px;
+    .auth-panel .btn-submit:active { opacity: 0.9; }
+    .auth-msg {
       font-size: 13px;
-      background: rgba(255,255,255,0.1);
-      color: #eee;
-      width: 100%;
+      margin-top: 12px;
+      min-height: 20px;
+      text-align: center;
     }
-    .tip {
-      font-size: 12px;
-      color: #868e96;
-      margin-top: 16px;
-      line-height: 1.5;
+    .auth-msg.error { color: #ff6b6b; }
+    .auth-msg.ok { color: #51cf66; }
+    .toggle-wrap {
+      text-align: center;
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(255,255,255,0.1);
     }
-    .play-urls {
-      margin-top: 16px;
-      padding: 12px;
-      background: rgba(255,255,255,0.06);
-      border-radius: 8px;
-      font-size: 12px;
+    .btn-toggle {
+      background: none;
+      border: none;
+      color: #74c0fc;
+      font-size: 14px;
+      cursor: pointer;
+      padding: 8px 16px;
+      text-decoration: underline;
     }
-    .play-title { font-size: 14px; margin: 0 0 10px; color: #fff; }
-    .play-item { margin: 6px 0; word-break: break-all; }
-    .play-item a { color: #74c0fc; text-decoration: none; }
-    .play-item a:active { opacity: 0.8; }
-    .audio-play-wrap { display: flex; gap: 12px; margin-top: 12px; align-items: center; flex-wrap: wrap; }
-    .audio-play-wrap button { flex: 0 0 auto; padding: 10px 16px; font-size: 14px; }
-    #btnPlayAudio { background: #2f9e44; color: #fff; }
-    #btnStopAudio { background: #495057; color: #fff; }
-    #remoteAudio { display: none; }
+    .btn-toggle:hover { opacity: 0.9; }
   </style>
 </head>
 <body>
-  <h1>推流 + 二维码识别</h1>
-  <div class="preview-wrap">
-    <video id="localVideo" autoplay playsinline muted></video>
-    <div class="preview-placeholder" id="placeholder">点击「开始推流」获取摄像头，同时推流并识别画面中的二维码</div>
-  </div>
-  <canvas id="canvas"></canvas>
-  <div class="status pending" id="status">就绪</div>
-  <div class="btn-wrap">
-    <button id="btnStart">开始推流</button>
-    <button id="btnStop" disabled>停止推流</button>
-    <button id="btnSwitch" disabled title="推流过程中可切换前后摄像头">切换摄像头</button>
-  </div>
+  <div class="auth-card">
+    <h1 id="authTitle">登录</h1>
 
-  <h2 class="section-title">识别记录</h2>
-  <div class="qr-log" id="qrLog"></div>
-  <button type="button" class="btn-clear" id="btnClearLog">清空记录</button>
-
-  <p class="tip">需用 <strong>HTTPS 或 localhost</strong> 打开此页。推流时会对画面做二维码识别，<strong>每次识别到二维码会保存该帧画面与内容</strong>，显示在下方的识别记录中（同一二维码 3 秒内不重复）。</p>
-  <section class="play-urls">
-    <h2 class="play-title">观看地址</h2>
-    <p class="play-item"><strong>HTTP-FLV</strong> <a href="https://livenew.h3r.website/live/szp.flv" target="_blank" rel="noopener">https://livenew.h3r.website/live/szp.flv</a></p>
-    <p class="play-item"><strong>HLS</strong> <a href="https://livenew.h3r.website/live/szp.m3u8" target="_blank" rel="noopener">https://livenew.h3r.website/live/szp.m3u8</a></p>
-    <p class="play-item"><strong>WebRTC (WHEP)</strong> <a href="https://livenew.h3r.website/rtc/v1/whep/?app=live&stream=szp" target="_blank" rel="noopener">https://livenew.h3r.website/rtc/v1/whep/?app=live&stream=szp</a></p>
-    <div class="audio-play-wrap">
-      <span class="play-title" style="margin:0;">纯音频流 (WebRTC)</span>
-      <button type="button" id="btnPlayAudio">播放音频</button>
-      <button type="button" id="btnStopAudio" disabled>停止音频</button>
+    <div id="panelLogin" class="auth-panel active">
+      <form id="formLogin">
+        <div class="form-group">
+          <label for="loginName">用户名</label>
+          <input type="text" id="loginName" name="name" placeholder="请输入用户名" autocomplete="username" />
+        </div>
+        <div class="form-group">
+          <label for="loginPwd">密码</label>
+          <input type="password" id="loginPwd" name="password" placeholder="请输入密码" autocomplete="current-password" />
+        </div>
+        <button type="submit" class="btn-submit">登录</button>
+        <div id="msgLogin" class="auth-msg"></div>
+      </form>
     </div>
-  </section>
-  <audio id="remoteAudio" autoplay playsinline></audio>
 
-  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <div id="panelRegister" class="auth-panel">
+      <form id="formRegister">
+        <div class="form-group">
+          <label for="regName">用户名</label>
+          <input type="text" id="regName" name="name" placeholder="请输入用户名" autocomplete="username" />
+        </div>
+        <div class="form-group">
+          <label for="regPwd">密码</label>
+          <input type="password" id="regPwd" name="password" placeholder="请输入密码" autocomplete="new-password" />
+        </div>
+        <div class="form-group">
+          <label for="regPwd2">确认密码</label>
+          <input type="password" id="regPwd2" name="password2" placeholder="请再次输入密码" autocomplete="new-password" />
+        </div>
+        <button type="submit" class="btn-submit">注册</button>
+        <div id="msgRegister" class="auth-msg"></div>
+      </form>
+    </div>
+
+    <div class="toggle-wrap">
+      <button type="button" class="btn-toggle" id="btnToggle">没有账号？去注册</button>
+    </div>
+  </div>
+
   <script>
     (function () {
-      const WHIP_URL = 'https://livenew.h3r.website/rtc/v1/whip/?app=live&stream=szp&secret=18d44630c086480783f62f33dbb7e09a';
-      const WHEP_AUDIO_URL = 'https://livenew.h3r.website/rtc/v1/whep/?app=live&stream=audio&secret=18d44630c086480783f62f33dbb7e09a';
-      const STORAGE_KEY = 'liveh5_qr_results';
-      const DEDUPE_MS = 3000;
-      const MAX_ITEMS = 30;
+      const STORAGE_USERS = 'liveh5_users';
+      const STORAGE_LOGIN = 'liveh5_login';
 
-      const localVideo = document.getElementById('localVideo');
-      const placeholder = document.getElementById('placeholder');
-      const statusEl = document.getElementById('status');
-      const btnStart = document.getElementById('btnStart');
-      const btnStop = document.getElementById('btnStop');
-      const btnSwitch = document.getElementById('btnSwitch');
-      const btnPlayAudio = document.getElementById('btnPlayAudio');
-      const btnStopAudio = document.getElementById('btnStopAudio');
-      const remoteAudio = document.getElementById('remoteAudio');
-      const canvas = document.getElementById('canvas');
-      const ctx = canvas.getContext('2d');
-      const qrLogEl = document.getElementById('qrLog');
-      const btnClearLog = document.getElementById('btnClearLog');
+      const authTitle = document.getElementById('authTitle');
+      const panelLogin = document.getElementById('panelLogin');
+      const panelRegister = document.getElementById('panelRegister');
+      const formLogin = document.getElementById('formLogin');
+      const formRegister = document.getElementById('formRegister');
+      const msgLogin = document.getElementById('msgLogin');
+      const msgRegister = document.getElementById('msgRegister');
+      const btnToggle = document.getElementById('btnToggle');
 
-      let pc = null;
-      let localStream = null;
-      let currentFacingMode = 'user';
-      let playPc = null;
-      let whepResourceUrl = null;
-      let qrRunning = false;
-      let rafId = null;
-      let lastQrData = '';
-      let lastQrTime = 0;
-
-      function isSecureContext() {
-        return typeof window !== 'undefined' && window.isSecureContext && navigator.mediaDevices != null;
-      }
-
-      function getMediaErrorMessage(e) {
-        if (!e || !e.name) return (e && e.message) || '无法获取摄像头/麦克风';
-        switch (e.name) {
-          case 'NotAllowedError':
-          case 'PermissionDeniedError':
-            return '未授权：请在浏览器中允许此页使用摄像头和麦克风。';
-          case 'NotFoundError':
-            return '未找到摄像头或麦克风设备。';
-          case 'NotReadableError':
-          case 'TrackStartError':
-            return '设备被占用或无法访问，请关闭其他使用摄像头的应用后重试。';
-          case 'SecurityError':
-            return '安全限制：请用 HTTPS 或 localhost 打开此页。';
-          case 'TypeError':
-            if (!isSecureContext()) {
-              return '请用 HTTPS 或 localhost 打开此页。';
-            }
-            return e.message || '无法获取摄像头/麦克风';
-          default:
-            return (e.message || e.name) + '（若用 Safari，请用 HTTPS 或 localhost 打开）';
-        }
-      }
-
-      function setStatus(text, type) {
-        statusEl.textContent = text;
-        statusEl.className = 'status ' + (type || 'pending');
-      }
-
-      function setPreviewVisible(visible) {
-        localVideo.style.display = visible ? 'block' : 'none';
-        placeholder.style.display = visible ? 'none' : 'flex';
-      }
-
-      function loadResults() {
+      function getUsers() {
         try {
-          const raw = localStorage.getItem(STORAGE_KEY);
-          return raw ? JSON.parse(raw) : [];
+          var raw = localStorage.getItem(STORAGE_USERS);
+          return raw ? JSON.parse(raw) : {};
         } catch (_) {
-          return [];
+          return {};
         }
       }
 
-      function saveResults(list) {
-        const trimmed = list.slice(-MAX_ITEMS);
+      function setUser(name, password) {
+        var users = getUsers();
+        users[name] = password;
         try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
+          localStorage.setItem(STORAGE_USERS, JSON.stringify(users));
         } catch (_) {}
-        return trimmed;
       }
 
-      function addResult(data, frameDataUrl) {
-        const now = Date.now();
-        if (data === lastQrData && (now - lastQrTime) < DEDUPE_MS) return false;
-        lastQrData = data;
-        lastQrTime = now;
-        const list = loadResults();
-        list.push({ data: data, time: now, frameDataUrl: frameDataUrl || null });
-        saveResults(list);
-        renderLog();
-        return true;
+      function setLoggedIn(name) {
+        try {
+          localStorage.setItem(STORAGE_LOGIN, name);
+        } catch (_) {}
       }
 
-      function renderLog() {
-        const list = loadResults();
-        if (list.length === 0) {
-          qrLogEl.innerHTML = '<div class="qr-log-empty">暂无记录，推流后对准二维码即可识别并保存（每条会显示该帧画面与扫到的内容）</div>';
-          return;
-        }
-        qrLogEl.innerHTML = list
-          .slice()
-          .reverse()
-          .map(function (item) {
-            const t = new Date(item.time);
-            const timeStr = t.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            const imgHtml = item.frameDataUrl
-              ? '<img class="qr-log-item-frame" src="' + item.frameDataUrl.replace(/"/g, '&quot;') + '" alt="识别时的画面" />'
-              : '';
-            return '<div class="qr-log-item">' + imgHtml + '<div class="qr-log-item-meta"><time>' + timeStr + '</time></div><div class="qr-log-item-data">' + escapeHtml(item.data) + '</div></div>';
-          })
-          .join('');
-      }
-
-      function escapeHtml(s) {
-        const div = document.createElement('div');
-        div.textContent = s;
-        return div.innerHTML;
-      }
-
-      function stopQrLoop() {
-        qrRunning = false;
-        if (rafId) {
-          cancelAnimationFrame(rafId);
-          rafId = null;
+      function showPanel(panel) {
+        panelLogin.classList.remove('active');
+        panelRegister.classList.remove('active');
+        panel.classList.add('active');
+        if (panel === panelLogin) {
+          authTitle.textContent = '登录';
+          btnToggle.textContent = '没有账号？去注册';
+          msgLogin.textContent = '';
+          msgRegister.textContent = '';
+        } else {
+          authTitle.textContent = '注册';
+          btnToggle.textContent = '已有账号？去登录';
+          msgLogin.textContent = '';
+          msgRegister.textContent = '';
         }
       }
 
-      function qrTick() {
-        if (!qrRunning || !localVideo.videoWidth) {
-          rafId = requestAnimationFrame(qrTick);
-          return;
+      function showMsg(el, text, isError) {
+        el.textContent = text;
+        el.className = 'auth-msg' + (isError ? ' error' : ' ok');
+      }
+
+      btnToggle.addEventListener('click', function () {
+        if (panelLogin.classList.contains('active')) {
+          showPanel(panelRegister);
+        } else {
+          showPanel(panelLogin);
         }
-        canvas.width = localVideo.videoWidth;
-        canvas.height = localVideo.videoHeight;
-        ctx.drawImage(localVideo, 0, 0);
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const code = typeof jsQR !== 'undefined' && jsQR(imageData.data, imageData.width, imageData.height);
-        if (code && code.data) {
-          var frameDataUrl = (canvas.width && canvas.height) ? canvas.toDataURL('image/png') : null;
-          addResult(code.data, frameDataUrl);
-        }
-        rafId = requestAnimationFrame(qrTick);
-      }
-
-      function startQrLoop() {
-        qrRunning = true;
-        rafId = requestAnimationFrame(qrTick);
-      }
-
-      if (!isSecureContext()) {
-        setStatus('当前环境无法使用摄像头/麦克风。请用 HTTPS 或 localhost 打开此页（如 npx serve . -p 8080 后访问 http://localhost:8080）。', 'error');
-      }
-
-      renderLog();
-
-      btnClearLog.addEventListener('click', function () {
-        saveResults([]);
-        renderLog();
       });
 
-      function getStream(facingMode) {
-        return navigator.mediaDevices.getUserMedia({
-          video: facingMode ? { facingMode: facingMode } : true,
-          audio: true
-        });
-      }
-
-      async function switchCamera() {
-        if (!localStream) return;
-        btnSwitch.disabled = true;
-        setStatus('正在切换摄像头…', 'pending');
-        var nextMode = currentFacingMode === 'user' ? 'environment' : 'user';
-        try {
-          var newStream = await getStream(nextMode);
-          if (pc) {
-            var senders = pc.getSenders();
-            var videoTrack = newStream.getVideoTracks()[0];
-            var audioTrack = newStream.getAudioTracks()[0];
-            for (var i = 0; i < senders.length; i++) {
-              if (senders[i].track && senders[i].track.kind === 'video' && videoTrack) {
-                await senders[i].replaceTrack(videoTrack);
-              }
-              if (senders[i].track && senders[i].track.kind === 'audio' && audioTrack) {
-                await senders[i].replaceTrack(audioTrack);
-              }
-            }
-          }
-          localStream.getTracks().forEach(function (t) { t.stop(); });
-          localStream = newStream;
-          localVideo.srcObject = localStream;
-          currentFacingMode = nextMode;
-          btnSwitch.textContent = currentFacingMode === 'user' ? '切换后摄' : '切换前摄';
-          setStatus('推流已连接，画面中的二维码会自动识别并保存', 'ok');
-        } catch (e) {
-          setStatus('切换失败: ' + (e.message || e.name) + '（可能只有一颗摄像头）', 'error');
-        }
-        btnSwitch.disabled = false;
-      }
-
-      async function startPush() {
-        if (!isSecureContext()) {
-          setStatus('请用 HTTPS 或 localhost 打开此页后再试。', 'error');
+      formLogin.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var name = (document.getElementById('loginName').value || '').trim();
+        var pwd = document.getElementById('loginPwd').value || '';
+        if (!name) {
+          showMsg(msgLogin, '请输入用户名', true);
           return;
         }
-        btnStart.disabled = true;
-        setStatus('正在获取摄像头/麦克风…', 'pending');
-
-        try {
-          localStream = await getStream(currentFacingMode);
-          localVideo.srcObject = localStream;
-          setPreviewVisible(true);
-          setStatus('已获取媒体，正在连接推流服务器…', 'pending');
-          btnSwitch.disabled = false;
-          btnSwitch.textContent = currentFacingMode === 'user' ? '切换后摄' : '切换前摄';
-          startQrLoop();
-        } catch (e) {
-          setStatus(getMediaErrorMessage(e), 'error');
-          btnStart.disabled = false;
+        if (!pwd) {
+          showMsg(msgLogin, '请输入密码', true);
           return;
         }
-
-        try {
-          pc = new RTCPeerConnection({
-            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-          });
-          pc.addEventListener('connectionstatechange', function () {
-            if (pc && pc.connectionState === 'failed') {
-              setStatus('连接失败，请检查网络或服务器', 'error');
-            }
-          });
-
-          localStream.getTracks().forEach(function (track) {
-            pc.addTrack(track, localStream);
-          });
-
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-
-          const response = await fetch(WHIP_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/sdp' },
-            body: offer.sdp
-          });
-
-          if (!response.ok) {
-            const text = await response.text();
-            throw new Error('服务器返回 ' + response.status + (text ? ': ' + text.slice(0, 200) : ''));
-          }
-
-          const answerSdp = await response.text();
-          await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
-
-          setStatus('推流已连接，画面中的二维码会自动识别并保存', 'ok');
-          btnStop.disabled = false;
-        } catch (e) {
-          setStatus('推流失败: ' + (e.message || e.name), 'error');
-          stopPush();
-          btnStart.disabled = false;
+        var users = getUsers();
+        if (users[name] !== pwd) {
+          showMsg(msgLogin, '用户名或密码错误', true);
+          return;
         }
+        setLoggedIn(name);
+        showMsg(msgLogin, '登录成功，正在跳转…', false);
+        window.location.href = 'push.html';
+      });
+
+      formRegister.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var name = (document.getElementById('regName').value || '').trim();
+        var pwd = document.getElementById('regPwd').value || '';
+        var pwd2 = document.getElementById('regPwd2').value || '';
+        if (!name) {
+          showMsg(msgRegister, '请输入用户名', true);
+          return;
+        }
+        if (pwd.length < 6) {
+          showMsg(msgRegister, '密码至少 6 位', true);
+          return;
+        }
+        if (pwd !== pwd2) {
+          showMsg(msgRegister, '两次密码不一致', true);
+          return;
+        }
+        var users = getUsers();
+        if (users[name]) {
+          showMsg(msgRegister, '该用户名已存在', true);
+          return;
+        }
+        setUser(name, pwd);
+        showMsg(msgRegister, '注册成功，请登录', false);
+        setTimeout(function () {
+          showPanel(panelLogin);
+          document.getElementById('loginName').value = name;
+          document.getElementById('loginPwd').value = '';
+          document.getElementById('loginPwd').focus();
+        }, 800);
+      });
+
+      if (localStorage.getItem(STORAGE_LOGIN)) {
+        window.location.href = 'push.html';
       }
-
-      function stopPush() {
-        btnSwitch.disabled = true;
-        btnSwitch.textContent = '切换摄像头';
-        stopQrLoop();
-        if (pc) {
-          pc.close();
-          pc = null;
-        }
-        if (localStream) {
-          localStream.getTracks().forEach(function (t) { t.stop(); });
-          localStream = null;
-        }
-        localVideo.srcObject = null;
-        setPreviewVisible(false);
-        setStatus('已停止推流', 'pending');
-        btnStart.disabled = false;
-        btnStop.disabled = true;
-      }
-
-      async function startAudioPlay() {
-        if (playPc) return;
-        btnPlayAudio.disabled = true;
-        setStatus('正在连接音频流…', 'pending');
-        try {
-          var res = await fetch(WHEP_AUDIO_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/sdp' },
-            body: ''
-          });
-          if (!res.ok) {
-            var text = await res.text();
-            throw new Error('服务器 ' + res.status + (text ? ': ' + text.slice(0, 150) : ''));
-          }
-          whepResourceUrl = res.headers.get('Location') || res.url;
-          var offerSdp = await res.text();
-          playPc = new RTCPeerConnection({
-            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-          });
-          playPc.ontrack = function (e) {
-            if (e.streams && e.streams[0]) {
-              remoteAudio.srcObject = e.streams[0];
-            } else if (e.track) {
-              var s = new MediaStream();
-              s.addTrack(e.track);
-              remoteAudio.srcObject = s;
-            }
-          };
-          playPc.addEventListener('connectionstatechange', function () {
-            if (playPc && playPc.connectionState === 'failed') {
-              setStatus('音频连接失败', 'error');
-            }
-          });
-          await playPc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
-          var answer = await playPc.createAnswer();
-          await playPc.setLocalDescription(answer);
-          var patchRes = await fetch(whepResourceUrl, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/sdp' },
-            body: playPc.localDescription.sdp
-          });
-          if (!patchRes.ok) {
-            var t = await patchRes.text();
-            throw new Error('PATCH ' + patchRes.status + (t ? ': ' + t.slice(0, 100) : ''));
-          }
-          setStatus('音频流已连接，正在播放', 'ok');
-          btnPlayAudio.disabled = true;
-          btnStopAudio.disabled = false;
-        } catch (e) {
-          setStatus('播放音频失败: ' + (e.message || e.name), 'error');
-          stopAudioPlay();
-          btnPlayAudio.disabled = false;
-        }
-      }
-
-      function stopAudioPlay() {
-        if (playPc) {
-          playPc.close();
-          playPc = null;
-        }
-        whepResourceUrl = null;
-        remoteAudio.srcObject = null;
-        btnPlayAudio.disabled = false;
-        btnStopAudio.disabled = true;
-        if (!localStream && !pc) setStatus('就绪', 'pending');
-      }
-
-      btnPlayAudio.addEventListener('click', startAudioPlay);
-      btnStopAudio.addEventListener('click', stopAudioPlay);
-
-      btnStart.addEventListener('click', startPush);
-      btnStop.addEventListener('click', stopPush);
-      btnSwitch.addEventListener('click', switchCamera);
     })();
   </script>
 </body>
