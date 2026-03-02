@@ -165,9 +165,9 @@
   <p class="tip">需用 <strong>HTTPS 或 localhost</strong> 打开此页。推流时会对画面做二维码识别，<strong>每次识别到二维码会保存该帧画面与内容</strong>，显示在下方的识别记录中（同一二维码 3 秒内不重复）。</p>
   <section class="play-urls">
     <h2 class="play-title">观看地址</h2>
-    <p class="play-item"><strong>HTTP-FLV</strong> <a href="https://livenew.h3r.website/live/szp.flv" target="_blank" rel="noopener">https://livenew.h3r.website/live/szp.flv</a></p>
-    <p class="play-item"><strong>HLS</strong> <a href="https://livenew.h3r.website/live/szp.m3u8" target="_blank" rel="noopener">https://livenew.h3r.website/live/szp.m3u8</a></p>
-    <p class="play-item"><strong>WebRTC (WHEP)</strong> <a href="https://livenew.h3r.website/rtc/v1/whep/?app=live&stream=szp" target="_blank" rel="noopener">https://livenew.h3r.website/rtc/v1/whep/?app=live&stream=szp</a></p>
+    <p class="play-item"><strong>HTTP-FLV</strong> <a id="linkFlv" href="#" target="_blank" rel="noopener"></a></p>
+    <p class="play-item"><strong>HLS</strong> <a id="linkHls" href="#" target="_blank" rel="noopener"></a></p>
+    <p class="play-item"><strong>WebRTC (WHEP)</strong> <a id="linkWhep" href="#" target="_blank" rel="noopener"></a></p>
     <div class="audio-play-wrap">
       <span class="play-title" style="margin:0;">纯音频流 (WebRTC)</span>
       <button type="button" id="btnPlayAudio">播放音频</button>
@@ -188,8 +188,24 @@
         localStorage.removeItem(LOGIN_KEY);
       });
 
-      const WHIP_URL = 'https://livenew.h3r.website/rtc/v1/whip/?app=live&stream=szp&secret=18d44630c086480783f62f33dbb7e09a';
-      const WHEP_AUDIO_URL = 'https://livenew.h3r.website/rtc/v1/whep/?app=live&stream=audio&secret=18d44630c086480783f62f33dbb7e09a';
+      var loginData = {};
+      try {
+        var raw = localStorage.getItem(LOGIN_KEY);
+        if (raw) loginData = JSON.parse(raw);
+      } catch (_) {}
+      var STREAM_NAME = (loginData.mobile || loginData.nickname || 'szp').toString().replace(/[^a-zA-Z0-9_]/g, '') || 'szp';
+      var BASE = 'https://livenew.h3r.website';
+      var SECRET = '18d44630c086480783f62f33dbb7e09a';
+
+      document.getElementById('linkFlv').href = BASE + '/live/' + STREAM_NAME + '.flv';
+      document.getElementById('linkFlv').textContent = BASE + '/live/' + STREAM_NAME + '.flv';
+      document.getElementById('linkHls').href = BASE + '/live/' + STREAM_NAME + '.m3u8';
+      document.getElementById('linkHls').textContent = BASE + '/live/' + STREAM_NAME + '.m3u8';
+      document.getElementById('linkWhep').href = BASE + '/rtc/v1/whep/?app=live&stream=' + STREAM_NAME;
+      document.getElementById('linkWhep').textContent = BASE + '/rtc/v1/whep/?app=live&stream=' + STREAM_NAME;
+
+      const WHIP_URL = BASE + '/rtc/v1/whip/?app=live&stream=' + STREAM_NAME + '&secret=' + SECRET;
+      const WHEP_AUDIO_URL = BASE + '/rtc/v1/whep/?app=live&stream=audio&secret=' + SECRET;
       const STORAGE_KEY = 'liveh5_qr_results';
       const DEDUPE_MS = 3000;
       const MAX_ITEMS = 30;

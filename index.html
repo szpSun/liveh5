@@ -231,6 +231,7 @@
                 refreshToken: json.data.refreshToken || '',
                 expiresTime: json.data.expiresTime || '',
                 nickname: mobile,
+                mobile: mobile,
                 userId: json.data.userId
               });
               showMsg(msgLogin, '登录成功，正在跳转…', false);
@@ -295,6 +296,7 @@
                 refreshToken: json.data.refreshToken || '',
                 expiresTime: json.data.expiresTime || '',
                 nickname: nickname,
+                mobile: mobile,
                 userId: json.data.userId
               });
               showMsg(msgRegister, '注册成功，正在跳转…', false);
