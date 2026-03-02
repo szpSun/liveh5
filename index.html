@@ -101,14 +101,14 @@
     <div id="panelLogin" class="auth-panel active">
       <form id="formLogin">
         <div class="form-group">
-          <label for="loginName">用户名</label>
-          <input type="text" id="loginName" name="name" placeholder="请输入用户名" autocomplete="username" />
+          <label for="loginMobile">手机号</label>
+          <input type="tel" id="loginMobile" name="mobile" placeholder="请输入手机号" autocomplete="tel" maxlength="11" />
         </div>
         <div class="form-group">
           <label for="loginPwd">密码</label>
           <input type="password" id="loginPwd" name="password" placeholder="请输入密码" autocomplete="current-password" />
         </div>
-        <button type="submit" class="btn-submit">登录</button>
+        <button type="submit" class="btn-submit" id="btnLoginSubmit">登录</button>
         <div id="msgLogin" class="auth-msg"></div>
       </form>
     </div>
@@ -116,18 +116,22 @@
     <div id="panelRegister" class="auth-panel">
       <form id="formRegister">
         <div class="form-group">
+          <label for="regMobile">手机号</label>
+          <input type="tel" id="regMobile" name="mobile" placeholder="请输入手机号" autocomplete="tel" maxlength="11" />
+        </div>
+        <div class="form-group">
           <label for="regName">用户名</label>
-          <input type="text" id="regName" name="name" placeholder="请输入用户名" autocomplete="username" />
+          <input type="text" id="regName" name="nickname" placeholder="请输入用户名" autocomplete="username" />
         </div>
         <div class="form-group">
           <label for="regPwd">密码</label>
-          <input type="password" id="regPwd" name="password" placeholder="请输入密码" autocomplete="new-password" />
+          <input type="password" id="regPwd" name="password" placeholder="请输入密码（至少6位）" autocomplete="new-password" />
         </div>
         <div class="form-group">
           <label for="regPwd2">确认密码</label>
           <input type="password" id="regPwd2" name="password2" placeholder="请再次输入密码" autocomplete="new-password" />
         </div>
-        <button type="submit" class="btn-submit">注册</button>
+        <button type="submit" class="btn-submit" id="btnRegSubmit">注册</button>
         <div id="msgRegister" class="auth-msg"></div>
       </form>
     </div>
@@ -139,8 +143,9 @@
 
   <script>
     (function () {
-      const STORAGE_USERS = 'liveh5_users';
       const STORAGE_LOGIN = 'liveh5_login';
+      const REGISTER_API = 'http://10.129.95.183:48080/app-api/member/auth/register';
+      const LOGIN_API = 'http://10.129.95.183:48080/app-api/member/auth/simple-login';
 
       const authTitle = document.getElementById('authTitle');
       const panelLogin = document.getElementById('panelLogin');
@@ -150,27 +155,12 @@
       const msgLogin = document.getElementById('msgLogin');
       const msgRegister = document.getElementById('msgRegister');
       const btnToggle = document.getElementById('btnToggle');
+      const btnRegSubmit = document.getElementById('btnRegSubmit');
+      const btnLoginSubmit = document.getElementById('btnLoginSubmit');
 
-      function getUsers() {
+      function setLoggedIn(data) {
         try {
-          var raw = localStorage.getItem(STORAGE_USERS);
-          return raw ? JSON.parse(raw) : {};
-        } catch (_) {
-          return {};
-        }
-      }
-
-      function setUser(name, password) {
-        var users = getUsers();
-        users[name] = password;
-        try {
-          localStorage.setItem(STORAGE_USERS, JSON.stringify(users));
-        } catch (_) {}
-      }
-
-      function setLoggedIn(name) {
-        try {
-          localStorage.setItem(STORAGE_LOGIN, name);
+          localStorage.setItem(STORAGE_LOGIN, JSON.stringify(data));
         } catch (_) {}
       }
 
@@ -206,32 +196,71 @@
 
       formLogin.addEventListener('submit', function (e) {
         e.preventDefault();
-        var name = (document.getElementById('loginName').value || '').trim();
+        var mobile = (document.getElementById('loginMobile').value || '').trim().replace(/\s/g, '');
         var pwd = document.getElementById('loginPwd').value || '';
-        if (!name) {
-          showMsg(msgLogin, '请输入用户名', true);
+        if (!mobile) {
+          showMsg(msgLogin, '请输入手机号', true);
+          return;
+        }
+        if (!/^1\d{10}$/.test(mobile)) {
+          showMsg(msgLogin, '请输入正确的手机号', true);
           return;
         }
         if (!pwd) {
           showMsg(msgLogin, '请输入密码', true);
           return;
         }
-        var users = getUsers();
-        if (users[name] !== pwd) {
-          showMsg(msgLogin, '用户名或密码错误', true);
-          return;
-        }
-        setLoggedIn(name);
-        showMsg(msgLogin, '登录成功，正在跳转…', false);
-        window.location.href = 'push.html';
+        btnLoginSubmit.disabled = true;
+        showMsg(msgLogin, '登录中…', false);
+        fetch(LOGIN_API, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Tenant-Id': '1'
+          },
+          body: JSON.stringify({
+            mobile: mobile,
+            password: pwd
+          })
+        })
+          .then(function (res) { return res.json(); })
+          .then(function (json) {
+            if (json.code === 0 && json.data && json.data.accessToken) {
+              setLoggedIn({
+                accessToken: json.data.accessToken,
+                refreshToken: json.data.refreshToken || '',
+                expiresTime: json.data.expiresTime || '',
+                nickname: mobile,
+                userId: json.data.userId
+              });
+              showMsg(msgLogin, '登录成功，正在跳转…', false);
+              window.location.href = 'push.html';
+            } else {
+              showMsg(msgLogin, json.msg || '登录失败', true);
+              btnLoginSubmit.disabled = false;
+            }
+          })
+          .catch(function (err) {
+            showMsg(msgLogin, '网络错误：' + (err.message || '请稍后重试'), true);
+            btnLoginSubmit.disabled = false;
+          });
       });
 
       formRegister.addEventListener('submit', function (e) {
         e.preventDefault();
-        var name = (document.getElementById('regName').value || '').trim();
+        var mobile = (document.getElementById('regMobile').value || '').trim().replace(/\s/g, '');
+        var nickname = (document.getElementById('regName').value || '').trim();
         var pwd = document.getElementById('regPwd').value || '';
         var pwd2 = document.getElementById('regPwd2').value || '';
-        if (!name) {
+        if (!mobile) {
+          showMsg(msgRegister, '请输入手机号', true);
+          return;
+        }
+        if (!/^1\d{10}$/.test(mobile)) {
+          showMsg(msgRegister, '请输入正确的手机号', true);
+          return;
+        }
+        if (!nickname) {
           showMsg(msgRegister, '请输入用户名', true);
           return;
         }
@@ -243,19 +272,42 @@
           showMsg(msgRegister, '两次密码不一致', true);
           return;
         }
-        var users = getUsers();
-        if (users[name]) {
-          showMsg(msgRegister, '该用户名已存在', true);
-          return;
-        }
-        setUser(name, pwd);
-        showMsg(msgRegister, '注册成功，请登录', false);
-        setTimeout(function () {
-          showPanel(panelLogin);
-          document.getElementById('loginName').value = name;
-          document.getElementById('loginPwd').value = '';
-          document.getElementById('loginPwd').focus();
-        }, 800);
+        btnRegSubmit.disabled = true;
+        showMsg(msgRegister, '注册中…', false);
+        fetch(REGISTER_API, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Tenant-Id': '1'
+          },
+          body: JSON.stringify({
+            mobile: mobile,
+            password: pwd,
+            nickname: nickname,
+            mark: ''
+          })
+        })
+          .then(function (res) { return res.json(); })
+          .then(function (json) {
+            if (json.code === 0 && json.data && json.data.accessToken) {
+              setLoggedIn({
+                accessToken: json.data.accessToken,
+                refreshToken: json.data.refreshToken || '',
+                expiresTime: json.data.expiresTime || '',
+                nickname: nickname,
+                userId: json.data.userId
+              });
+              showMsg(msgRegister, '注册成功，正在跳转…', false);
+              window.location.href = 'push.html';
+            } else {
+              showMsg(msgRegister, json.msg || '注册失败', true);
+              btnRegSubmit.disabled = false;
+            }
+          })
+          .catch(function (err) {
+            showMsg(msgRegister, '网络错误：' + (err.message || '请稍后重试'), true);
+            btnRegSubmit.disabled = false;
+          });
       });
 
       if (localStorage.getItem(STORAGE_LOGIN)) {
