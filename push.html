@@ -143,18 +143,18 @@
 </head>
 <body>
   <div class="header-row">
-    <h1>推流 + 二维码识别</h1>
+    <h1>直播 + 二维码识别</h1>
     <a href="index.html" class="link-out">退出</a>
   </div>
   <div class="preview-wrap">
     <video id="localVideo" autoplay playsinline muted></video>
-    <div class="preview-placeholder" id="placeholder">点击「开始推流」获取摄像头，同时推流并识别画面中的二维码</div>
+    <div class="preview-placeholder" id="placeholder">点击「请求直播」发起直播请求并获取摄像头，同时进行直播推流并识别画面中的二维码</div>
   </div>
   <canvas id="canvas"></canvas>
   <div class="status pending" id="status">就绪</div>
   <div class="btn-wrap">
-    <button id="btnStart">开始推流</button>
-    <button id="btnStop" disabled>停止推流</button>
+    <button id="btnStart">请求直播</button>
+    <button id="btnStop" disabled>停止直播</button>
     <button id="btnSwitch" disabled title="推流过程中可切换前后摄像头">切换摄像头</button>
   </div>
 
@@ -162,7 +162,7 @@
   <div class="qr-log" id="qrLog"></div>
   <button type="button" class="btn-clear" id="btnClearLog">清空记录</button>
 
-  <p class="tip">需用 <strong>HTTPS 或 localhost</strong> 打开此页。推流时会对画面做二维码识别，<strong>每次识别到二维码会保存该帧画面与内容</strong>，显示在下方的识别记录中（同一二维码 3 秒内不重复）。</p>
+  <p class="tip">需用 <strong>HTTPS 或 localhost</strong> 打开此页。发起直播并开始推流后会对画面做二维码识别，<strong>每次识别到二维码会保存该帧画面与内容</strong>，显示在下方的识别记录中（同一二维码 3 秒内不重复）。</p>
   <section class="play-urls">
     <h2 class="play-title">观看地址</h2>
     <p class="play-item"><strong>HTTP-FLV</strong> <a id="linkFlv" href="#" target="_blank" rel="noopener"></a></p>
@@ -196,6 +196,15 @@
       var STREAM_NAME = (loginData.mobile || loginData.nickname || 'szp').toString().replace(/[^a-zA-Z0-9_]/g, '') || 'szp';
       var BASE = 'https://livenew.h3r.website';
       var SECRET = '18d44630c086480783f62f33dbb7e09a';
+
+      // 直播请求 & 直播状态相关接口（基于业务后端）
+      var API_BASE = 'http://10.112.149.184:48080/app-api';
+      var API_CHECK_REQUEST = API_BASE + '/user/check/request';
+      var API_CREATE_REQUEST = API_BASE + '/user/request';
+      var API_REQUEST_INFO = API_BASE + '/user/request/info';
+      var API_CHECK_STATUS = API_BASE + '/user/check/status';
+      var API_UPDATE_STREAM_STATE = API_BASE + '/livestore/stream/update/state';
+      var API_SAVE_STREAM_URL = API_BASE + '/livestore/stream/save';
 
       document.getElementById('linkFlv').href = BASE + '/live/' + STREAM_NAME + '.flv';
       document.getElementById('linkFlv').textContent = BASE + '/live/' + STREAM_NAME + '.flv';
@@ -233,6 +242,142 @@
       let rafId = null;
       let lastQrData = '';
       let lastQrTime = 0;
+
+      // ===== 直播请求相关封装方法 =====
+      function ensureLoginValid() {
+        if (!loginData || !loginData.accessToken || !loginData.userId) {
+          throw new Error('登录信息已失效，请重新登录后再发起直播');
+        }
+      }
+
+      function getAuthHeaders(isJson) {
+        ensureLoginValid();
+        var h = {
+          'Authorization': 'Bearer ' + loginData.accessToken
+        };
+        // 根据之前登录接口习惯，补充 Tenant-Id 方便网关识别；可按需调整
+        h['Tenant-Id'] = '1';
+        if (isJson) {
+          h['Content-Type'] = 'application/json';
+        }
+        return h;
+      }
+
+      async function apiGet(url, userId) {
+        var full = url + '?userId=' + encodeURIComponent(userId);
+        var res = await fetch(full, {
+          method: 'GET',
+          headers: getAuthHeaders(false)
+        });
+        if (!res.ok) {
+          var txt = '';
+          try { txt = await res.text(); } catch (_) {}
+          throw new Error('接口请求失败：' + res.status + (txt ? ' - ' + txt.slice(0, 120) : ''));
+        }
+        var json = await res.json();
+        if (json.code !== 0) {
+          throw new Error(json.msg || '接口返回错误');
+        }
+        return json;
+      }
+
+      async function apiPost(url, userId) {
+        var res = await fetch(url, {
+          method: 'POST',
+          headers: getAuthHeaders(true),
+          body: JSON.stringify({ userId: userId })
+        });
+        if (!res.ok) {
+          var txt = '';
+          try { txt = await res.text(); } catch (_) {}
+          throw new Error('接口请求失败：' + res.status + (txt ? ' - ' + txt.slice(0, 120) : ''));
+        }
+        var json = await res.json();
+        if (json.code !== 0) {
+          throw new Error(json.msg || '接口返回错误');
+        }
+        return json;
+      }
+
+      // 判断用户是否已经发起过直播请求
+      async function checkHasLiveRequest(userId) {
+        var json = await apiGet(API_CHECK_REQUEST, userId);
+        return !!json.data;
+      }
+
+      // 发起直播请求
+      async function createLiveRequest(userId) {
+        var json = await apiPost(API_CREATE_REQUEST, userId);
+        return json.data || null;
+      }
+
+      // 获取当前有效的直播请求详情
+      async function getLiveRequestInfo(userId) {
+        var json = await apiGet(API_REQUEST_INFO, userId);
+        return json.data || null;
+      }
+
+      // 查询用户直播请求状态（若无请求返回 NO_REQUEST）
+      async function getLiveRequestStatus(userId) {
+        var json = await apiGet(API_CHECK_STATUS, userId);
+        return typeof json.data === 'string' ? json.data : '';
+      }
+
+      // 根据用户ID更新直播状态（0-未开始 1-直播中 2-已结束 3-异常）
+      async function updateLiveState(userId, state) {
+        var res = await fetch(API_UPDATE_STREAM_STATE, {
+          method: 'POST',
+          headers: getAuthHeaders(true),
+          body: JSON.stringify({ userId: userId, state: state })
+        });
+        if (!res.ok) {
+          var txt = '';
+          try { txt = await res.text(); } catch (_) {}
+          throw new Error('更新直播状态失败：' + res.status + (txt ? ' - ' + txt.slice(0, 120) : ''));
+        }
+        var json = await res.json();
+        if (json.code !== 0) {
+          throw new Error(json.msg || '更新直播状态失败');
+        }
+        return json;
+      }
+
+      // 保存/更新用户直播流地址到 live_stream_list 表
+      async function saveLiveStream(userId, url, requestId) {
+        var res = await fetch(API_SAVE_STREAM_URL, {
+          method: 'POST',
+          headers: getAuthHeaders(true),
+          body: JSON.stringify({ userId: userId, url: url, requestId: requestId })
+        });
+        if (!res.ok) {
+          var txt = '';
+          try { txt = await res.text(); } catch (_) {}
+          throw new Error('保存直播流地址失败：' + res.status + (txt ? ' - ' + txt.slice(0, 120) : ''));
+        }
+        var json = await res.json();
+        if (json.code !== 0) {
+          throw new Error(json.msg || '保存直播流地址失败');
+        }
+        return json;
+      }
+
+      // 将后端状态码映射为更友好的中文文案
+      function getReadableStatus(status) {
+        switch (status) {
+          case 'NO_REQUEST':
+            return '无请求';
+          case 'PENDING':
+            return '待处理';
+          case 'SUCCESS':
+            return '已批准';
+          case 'FAIL':
+            return '已拒绝';
+          case 'EXPIRED':
+            return '已过期';
+          default:
+            return status || '未知';
+        }
+      }
 
       function isSecureContext() {
         return typeof window !== 'undefined' && window.isSecureContext && navigator.mediaDevices != null;
@@ -482,9 +627,15 @@
         }
         localVideo.srcObject = null;
         setPreviewVisible(false);
-        setStatus('已停止推流', 'pending');
+        setStatus('已停止直播', 'pending');
         btnStart.disabled = false;
         btnStop.disabled = true;
+
+        // 主动结束时，上报直播状态为“已结束”
+        try {
+          ensureLoginValid();
+          updateLiveState(loginData.userId, 2); // 2-已结束
+        } catch (_) {}
       }
 
       async function startAudioPlay() {
@@ -557,7 +708,70 @@
       btnPlayAudio.addEventListener('click', startAudioPlay);
       btnStopAudio.addEventListener('click', stopAudioPlay);
 
-      btnStart.addEventListener('click', startPush);
+      // 点击“请求直播”按钮的处理：先发起/检查直播请求，只有审批通过才开始推流
+      btnStart.addEventListener('click', async function () {
+        try {
+          ensureLoginValid();
+        } catch (e) {
+          setStatus(e.message || '登录已失效，请返回登录页重新登录', 'error');
+          return;
+        }
+
+        var userId = loginData.userId;
+        btnStart.disabled = true;
+        setStatus('正在请求直播…', 'pending');
+
+        try {
+          // 先判断是否已有直播请求，没有则发起一个
+          var hasReq = await checkHasLiveRequest(userId);
+          if (!hasReq) {
+            await createLiveRequest(userId);
+          }
+
+          // 获取请求详情与状态，仅用于展示
+          var info = null;
+          var status = '';
+          try {
+            info = await getLiveRequestInfo(userId);
+          } catch (_) {}
+          try {
+            status = await getLiveRequestStatus(userId);
+          } catch (_) {}
+
+          // 使用后端约定的状态：
+          // NO_REQUEST-无请求、PENDING-待处理、SUCCESS-已批准、FAIL-已拒绝、EXPIRED-已过期
+          if (status === 'SUCCESS') {
+            // 仅在 SUCCESS 时：更新直播状态为“直播中”，并保存直播流地址
+            var requestId = info && info.requestId ? info.requestId : '';
+            var playUrl = BASE + '/live/' + STREAM_NAME + '.m3u8'; // 这里选择上报 HLS 播放地址
+            try {
+              if (requestId) {
+                await saveLiveStream(userId, playUrl, requestId);
+              } else {
+                console.warn('未获取到 requestId，未调用保存直播流地址接口');
+              }
+            } catch (eStream) {
+              console.warn('保存直播流地址失败：', eStream);
+              // 不阻断后续开播，仅在控制台提示
+            }
+            try {
+              await updateLiveState(userId, 1); // 1-直播中
+            } catch (eState) {
+              console.warn('更新直播状态为直播中失败：', eState);
+            }
+
+            setStatus('直播请求已批准，正在开始直播推流…', 'ok');
+            await startPush();
+          } else {
+            var readable = getReadableStatus(status);
+            setStatus('当前直播请求状态为：' + readable + '，暂不能开始直播推流，请等待审核通过或重新发起请求。', 'pending');
+            btnStart.disabled = false;
+          }
+        } catch (e) {
+          setStatus((e && e.message) ? ('请求直播失败：' + e.message) : '请求直播失败', 'error');
+          btnStart.disabled = false;
+        }
+      });
       btnStop.addEventListener('click', stopPush);
       btnSwitch.addEventListener('click', switchCamera);
     })();
