@@ -42,6 +42,28 @@
       text-align: center;
       padding: 16px;
     }
+    .live-status {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #fff;
+    }
+    .live-status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #868e96;
+    }
+    .live-status-dot.pending { background: #ffd43b; }
+    .live-status-dot.success { background: #51cf66; }
+    .live-status-dot.idle { background: #868e96; }
     #canvas { display: none; }
     .status {
       padding: 10px 12px;
@@ -54,7 +76,7 @@
     .status.error { color: #ff6b6b; }
     .status.ok { color: #51cf66; }
     .status.pending { color: #ffd43b; }
-    .btn-wrap { display: flex; gap: 12px; margin-bottom: 12px; }
+    .btn-wrap { display: flex; gap: 12px; margin-bottom: 12px; align-items: center; }
     button {
       flex: 1;
       padding: 14px 20px;
@@ -70,6 +92,14 @@
     #btnStart { background: linear-gradient(135deg, #339af0, #228be6); color: #fff; }
     #btnStop { background: #495057; color: #fff; }
     #btnSwitch { background: rgba(255,255,255,0.15); color: #eee; flex: 0 0 auto; }
+    .request-timer {
+      margin-left: auto;
+      font-size: 12px;
+      color: #ffd43b;
+      min-width: 140px;
+      text-align: right;
+      white-space: nowrap;
+    }
     .section-title {
       font-size: 14px;
       margin: 16px 0 8px;
@@ -149,6 +179,10 @@
   <div class="preview-wrap">
     <video id="localVideo" autoplay playsinline muted></video>
     <div class="preview-placeholder" id="placeholder">点击「请求直播」发起直播请求并获取摄像头，同时进行直播推流并识别画面中的二维码</div>
+    <div class="live-status" id="liveStatus">
+      <span class="live-status-dot idle" id="liveStatusDot"></span>
+      <span class="live-status-text" id="liveStatusText">无请求</span>
+    </div>
   </div>
   <canvas id="canvas"></canvas>
   <div class="status pending" id="status">就绪</div>
@@ -156,6 +190,7 @@
     <button id="btnStart">请求直播</button>
     <button id="btnStop" disabled>停止直播</button>
     <button id="btnSwitch" disabled title="推流过程中可切换前后摄像头">切换摄像头</button>
+    <span id="requestTimer" class="request-timer"></span>
   </div>
 
   <h2 class="section-title">识别记录</h2>
@@ -232,6 +267,10 @@
       const ctx = canvas.getContext('2d');
       const qrLogEl = document.getElementById('qrLog');
       const btnClearLog = document.getElementById('btnClearLog');
+      const liveStatusEl = document.getElementById('liveStatus');
+      const liveStatusDot = document.getElementById('liveStatusDot');
+      const liveStatusText = document.getElementById('liveStatusText');
+      const requestTimerEl = document.getElementById('requestTimer');
 
       let pc = null;
       let localStream = null;
@@ -242,6 +281,11 @@
       let rafId = null;
       let lastQrData = '';
       let lastQrTime = 0;
+      let statusPollTimer = null;
+      let isPushing = false;
+      let hasRequestedLive = false;
+      let requestCountdownTimer = null;
+      let requestCountdownEndTime = 0;
 
       // ===== 直播请求相关封装方法 =====
       function ensureLoginValid() {
@@ -385,6 +429,22 @@
         }
       }
 
+      // 更新预览区域右上角的直播请求状态指示
+      function updateLiveStatusIndicator(status) {
+        if (!liveStatusEl || !liveStatusDot || !liveStatusText) return;
+        var readable = getReadableStatus(status);
+        liveStatusText.textContent = readable;
+        var cls = 'live-status-dot ';
+        if (status === 'SUCCESS') {
+          cls += 'success';
+        } else if (status === 'PENDING') {
+          cls += 'pending';
+        } else {
+          cls += 'idle';
+        }
+        liveStatusDot.className = cls;
+      }
+
       function isSecureContext() {
         return typeof window !== 'undefined' && window.isSecureContext && navigator.mediaDevices != null;
       }
@@ -525,6 +585,20 @@
         });
       }
 
+      // 进入页面后尝试提前获取摄像头/麦克风权限，避免真正开播时才弹窗
+      async function prewarmMedia() {
+        if (!isSecureContext()) return;
+        if (localStream) return;
+        try {
+          localStream = await getStream(currentFacingMode);
+          localVideo.srcObject = localStream;
+          setPreviewVisible(true);
+          setStatus('已获取摄像头/麦克风权限，等待直播请求。', 'pending');
+        } catch (e) {
+          console.warn('预获取摄像头/麦克风失败：', e);
+        }
+      }
+
       async function switchCamera() {
         if (!localStream) return;
         btnSwitch.disabled = true;
@@ -563,21 +637,27 @@
           return;
         }
         btnStart.disabled = true;
-        setStatus('正在获取摄像头/麦克风…', 'pending');
-
-        try {
-          localStream = await getStream(currentFacingMode);
+        // 若还没有本地流，则此时获取；否则复用预先获取的流
+        if (!localStream) {
+          setStatus('正在获取摄像头/麦克风…', 'pending');
+          try {
+            localStream = await getStream(currentFacingMode);
+            localVideo.srcObject = localStream;
+            setPreviewVisible(true);
+            setStatus('已获取媒体，正在连接推流服务器…', 'pending');
+          } catch (e) {
+            setStatus(getMediaErrorMessage(e), 'error');
+            btnStart.disabled = false;
+            return;
+          }
+        } else {
           localVideo.srcObject = localStream;
           setPreviewVisible(true);
-          setStatus('已获取媒体，正在连接推流服务器…', 'pending');
-          btnSwitch.disabled = false;
-          btnSwitch.textContent = currentFacingMode === 'user' ? '切换后摄' : '切换前摄';
-          startQrLoop();
-        } catch (e) {
-          setStatus(getMediaErrorMessage(e), 'error');
-          btnStart.disabled = false;
-          return;
+          setStatus('正在连接推流服务器…', 'pending');
         }
+        btnSwitch.disabled = false;
+        btnSwitch.textContent = currentFacingMode === 'user' ? '切换后摄' : '切换前摄';
+        startQrLoop();
 
         try {
           pc = new RTCPeerConnection({
@@ -612,6 +692,7 @@
 
           setStatus('推流已连接，画面中的二维码会自动识别并保存', 'ok');
           btnStop.disabled = false;
+          isPushing = true;
         } catch (e) {
           setStatus('推流失败: ' + (e.message || e.name), 'error');
           stopPush();
@@ -620,6 +701,7 @@
       }
 
       function stopPush() {
+        isPushing = false;
         btnSwitch.disabled = true;
         btnSwitch.textContent = '切换摄像头';
         stopQrLoop();
@@ -711,6 +793,90 @@
         if (!localStream && !pc) setStatus('就绪', 'pending');
       }
 
+      // “请求直播”冷却倒计时：点击后 3 分钟内按钮置灰，右侧显示读秒
+      function startRequestCooldown() {
+        const DURATION_SEC = 180;
+        requestCountdownEndTime = Date.now() + DURATION_SEC * 1000;
+        if (requestCountdownTimer) {
+          clearInterval(requestCountdownTimer);
+        }
+        updateRequestTimer();
+        requestCountdownTimer = setInterval(updateRequestTimer, 1000);
+      }
+
+      function updateRequestTimer() {
+        if (!requestTimerEl) return;
+        const remaining = requestCountdownEndTime - Date.now();
+        if (remaining <= 0) {
+          clearInterval(requestCountdownTimer);
+          requestCountdownTimer = null;
+          requestTimerEl.textContent = '';
+          if (!isPushing) {
+            btnStart.disabled = false;
+          }
+          return;
+        }
+        const sec = Math.ceil(remaining / 1000);
+        btnStart.disabled = true;
+        requestTimerEl.textContent = sec + ' 秒后可再次请求直播';
+      }
+
+      // 轮询获取用户直播请求状态，用于右上角状态点 & 自动在 SUCCESS 后开播
+      function startStatusPolling() {
+        if (!loginData.userId) return;
+        if (statusPollTimer) return;
+        // 立即刷新一次
+        (async function () {
+          try {
+            const s = await getLiveRequestStatus(loginData.userId);
+            updateLiveStatusIndicator(s);
+          } catch (_) {}
+        })();
+        statusPollTimer = setInterval(async function () {
+          try {
+            const userId = loginData.userId;
+            if (!userId) return;
+            const status = await getLiveRequestStatus(userId);
+            updateLiveStatusIndicator(status);
+            // 只有在用户已发起过直播请求且当前还未推流时，才考虑自动开播
+            if (status === 'SUCCESS' && hasRequestedLive && !isPushing) {
+              let info = null;
+              try {
+                info = await getLiveRequestInfo(userId);
+              } catch (_) {}
+              await handleApprovedAndStart(userId, info);
+            }
+          } catch (e) {
+            // 静默失败，避免打扰用户
+          }
+        }, 3000);
+      }
+
+      // 当检测到 SUCCESS（无论是按钮请求后立即返回，还是轮询时返回）时，统一走这里：
+      // 1. 保存直播流地址 2. 更新直播状态为“直播中” 3. 调用 startPush() 真正开播
+      async function handleApprovedAndStart(userId, info) {
+        if (isPushing) return;
+        var requestId = info && info.requestId ? info.requestId : '';
+        var playUrl = BASE + '/live/' + STREAM_NAME + '.m3u8'; // 这里选择上报 HLS 播放地址
+        try {
+          if (requestId) {
+            await saveLiveStream(userId, playUrl, requestId);
+          } else {
+            console.warn('未获取到 requestId，未调用保存直播流地址接口');
+          }
+        } catch (eStream) {
+          console.warn('保存直播流地址失败：', eStream);
+          // 不阻断后续开播，仅在控制台提示
+        }
+        try {
+          await updateLiveState(userId, 1); // 1-直播中
+        } catch (eState) {
+          console.warn('更新直播状态为直播中失败：', eState);
+        }
+        setStatus('直播请求已批准，正在开始直播推流…', 'ok');
+        await startPush();
+      }
+
       btnPlayAudio.addEventListener('click', startAudioPlay);
       btnStopAudio.addEventListener('click', stopAudioPlay);
 
@@ -733,6 +899,7 @@
           if (!hasReq) {
             await createLiveRequest(userId);
           }
+          hasRequestedLive = true;
 
           // 获取请求详情与状态，仅用于展示
           var info = null;
@@ -744,34 +911,19 @@
             status = await getLiveRequestStatus(userId);
           } catch (_) {}
 
+          // 成功发起/获取直播请求后，启动 3 分钟冷却倒计时 & 状态轮询
+          startRequestCooldown();
+          startStatusPolling();
+
           // 使用后端约定的状态：
           // NO_REQUEST-无请求、PENDING-待处理、SUCCESS-已批准、FAIL-已拒绝、EXPIRED-已过期
           if (status === 'SUCCESS') {
-            // 仅在 SUCCESS 时：更新直播状态为“直播中”，并保存直播流地址
-            var requestId = info && info.requestId ? info.requestId : '';
-            var playUrl = BASE + '/live/' + STREAM_NAME + '.m3u8'; // 这里选择上报 HLS 播放地址
-            try {
-              if (requestId) {
-                await saveLiveStream(userId, playUrl, requestId);
-              } else {
-                console.warn('未获取到 requestId，未调用保存直播流地址接口');
-              }
-            } catch (eStream) {
-              console.warn('保存直播流地址失败：', eStream);
-              // 不阻断后续开播，仅在控制台提示
-            }
-            try {
-              await updateLiveState(userId, 1); // 1-直播中
-            } catch (eState) {
-              console.warn('更新直播状态为直播中失败：', eState);
-            }
-
-            setStatus('直播请求已批准，正在开始直播推流…', 'ok');
-            await startPush();
+            // 若立即返回 SUCCESS，则直接开始直播
+            await handleApprovedAndStart(userId, info);
           } else {
             var readable = getReadableStatus(status);
             setStatus('当前直播请求状态为：' + readable + '，暂不能开始直播推流，请等待审核通过或重新发起请求。', 'pending');
-            btnStart.disabled = false;
+            // 此时按钮保持置灰，由冷却倒计时恢复
           }
         } catch (e) {
           setStatus((e && e.message) ? ('请求直播失败：' + e.message) : '请求直播失败', 'error');
@@ -780,6 +932,9 @@
       });
       btnStop.addEventListener('click', stopPush);
       btnSwitch.addEventListener('click', switchCamera);
+      // 进入页面时，尝试预获取媒体权限，并启动状态轮询
+      prewarmMedia();
+      startStatusPolling();
     })();
   </script>
 </body>
