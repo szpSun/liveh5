@@ -282,10 +282,11 @@
       }
 
       async function apiPost(url, userId) {
-        var res = await fetch(url, {
+        // 根据后端报错“请求参数缺失:userId”推断，这里应该使用查询参数而不是 JSON Body
+        var full = url + '?userId=' + encodeURIComponent(userId);
+        var res = await fetch(full, {
           method: 'POST',
-          headers: getAuthHeaders(true),
-          body: JSON.stringify({ userId: userId })
+          headers: getAuthHeaders(false)
         });
         if (!res.ok) {
           var txt = '';
@@ -325,10 +326,12 @@
 
       // 根据用户ID更新直播状态（0-未开始 1-直播中 2-已结束 3-异常）
       async function updateLiveState(userId, state) {
-        var res = await fetch(API_UPDATE_STREAM_STATE, {
+        var full = API_UPDATE_STREAM_STATE
+          + '?userId=' + encodeURIComponent(userId)
+          + '&state=' + encodeURIComponent(state);
+        var res = await fetch(full, {
           method: 'POST',
-          headers: getAuthHeaders(true),
-          body: JSON.stringify({ userId: userId, state: state })
+          headers: getAuthHeaders(false)
         });
         if (!res.ok) {
           var txt = '';
@@ -344,10 +347,13 @@
 
       // 保存/更新用户直播流地址到 live_stream_list 表
       async function saveLiveStream(userId, url, requestId) {
-        var res = await fetch(API_SAVE_STREAM_URL, {
+        var full = API_SAVE_STREAM_URL
+          + '?userId=' + encodeURIComponent(userId)
+          + '&url=' + encodeURIComponent(url)
+          + '&requestId=' + encodeURIComponent(requestId || '');
+        var res = await fetch(full, {
           method: 'POST',
-          headers: getAuthHeaders(true),
-          body: JSON.stringify({ userId: userId, url: url, requestId: requestId })
+          headers: getAuthHeaders(false)
         });
         if (!res.ok) {
           var txt = '';
