@@ -951,9 +951,8 @@
       });
       btnStop.addEventListener('click', stopPush);
       btnSwitch.addEventListener('click', switchCamera);
-      // 进入页面时，尝试预获取媒体权限，并启动状态轮询
+      // 进入页面时，尝试预获取媒体权限（不自动轮询状态，只有请求直播后才轮询）
       prewarmMedia();
-      startStatusPolling();
     })();
   </script>
 </body>
