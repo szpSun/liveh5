@@ -719,11 +719,27 @@
         btnStart.disabled = false;
         btnStop.disabled = true;
 
+        // 停止后不再轮询请求状态，也清理倒计时
+        if (statusPollTimer) {
+          clearInterval(statusPollTimer);
+          statusPollTimer = null;
+        }
+        if (requestCountdownTimer) {
+          clearInterval(requestCountdownTimer);
+          requestCountdownTimer = null;
+        }
+        if (requestTimerEl) {
+          requestTimerEl.textContent = '';
+        }
+
         // 主动结束时，上报直播状态为“已结束”
         try {
           ensureLoginValid();
           updateLiveState(loginData.userId, 2); // 2-已结束
         } catch (_) {}
+
+        // 用户主动停止后，本轮直播请求流程结束，不再根据 SUCCESS 自动重新开播
+        hasRequestedLive = false;
       }
 
       async function startAudioPlay() {
@@ -838,8 +854,11 @@
             if (!userId) return;
             const status = await getLiveRequestStatus(userId);
             updateLiveStatusIndicator(status);
-            // 只有在用户已发起过直播请求且当前还未推流时，才考虑自动开播
-            if (status === 'SUCCESS' && hasRequestedLive && !isPushing) {
+            // 只有在用户已发起过直播请求且当前还未推流、且按钮处于冷却中时，才考虑自动开播
+            if (status === 'SUCCESS'
+                && hasRequestedLive
+                && !isPushing
+                && requestCountdownTimer) {
               let info = null;
               try {
                 info = await getLiveRequestInfo(userId);
