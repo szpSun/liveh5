@@ -241,6 +241,7 @@
       var API_UPDATE_STREAM_STATE = API_BASE + '/livestore/stream/update/state';
       var API_SAVE_STREAM_URL = API_BASE + '/livestore/stream/save';
       var API_UPLOAD_PIC = API_BASE + '/livestore/upload/pic';
+      var API_GET_LIVESTREAM = API_BASE + '/livestore';
 
       document.getElementById('linkFlv').href = BASE + '/live/' + STREAM_NAME + '.flv';
       document.getElementById('linkFlv').textContent = BASE + '/live/' + STREAM_NAME + '.flv';
@@ -288,6 +289,7 @@
       let requestCountdownTimer = null;
       let requestCountdownEndTime = 0;
       let savedRequestId = null; // 保存请求直播时获取的 requestId
+      let savedLiveStreamId = null; // 保存直播流的 ID
 
       // ===== 直播请求相关封装方法 =====
       function ensureLoginValid() {
@@ -389,6 +391,12 @@
           throw new Error(json.msg || '更新直播状态失败');
         }
         return json;
+      }
+
+      // 获取直播流信息（用于获取 liveStreamId）
+      async function getLiveStreamInfo(userId) {
+        var json = await apiGet(API_GET_LIVESTREAM, userId);
+        return json.data || null;
       }
 
       // 上传二维码截图
@@ -559,8 +567,8 @@
               var response = await fetch(frameDataUrl);
               var blob = await response.blob();
               
-              // 使用 STREAM_NAME 作为 liveStreamId（如果后端需要其他值，可以调整）
-              var liveStreamId = STREAM_NAME;
+              // 使用保存的 liveStreamId，如果没有则使用 STREAM_NAME 作为后备
+              var liveStreamId = savedLiveStreamId || STREAM_NAME;
               var userId = loginData.userId;
               var requestId = savedRequestId || '';
               
@@ -806,6 +814,7 @@
         // 用户主动停止后，本轮直播请求流程结束，不再根据 SUCCESS 自动重新开播
         hasRequestedLive = false;
         savedRequestId = null; // 清除保存的 requestId
+        savedLiveStreamId = null; // 清除保存的 liveStreamId
       }
 
       async function startAudioPlay() {
@@ -958,6 +967,18 @@
         } catch (eState) {
           console.warn('更新直播状态为直播中失败：', eState);
         }
+        
+        // 获取直播流信息，保存 liveStreamId 供后续上传二维码截图使用
+        try {
+          var streamInfo = await getLiveStreamInfo(userId);
+          if (streamInfo && streamInfo.id) {
+            savedLiveStreamId = streamInfo.id;
+            console.log('保存 liveStreamId：', savedLiveStreamId);
+          }
+        } catch (e) {
+          console.warn('获取直播流信息失败：', e);
+        }
+        
         setStatus('直播请求已批准，正在开始直播推流…', 'ok');
         await startPush();
       }
