@@ -199,10 +199,6 @@
 
   <p class="tip">需用 <strong>HTTPS 或 localhost</strong> 打开此页。发起直播并开始推流后会对画面做二维码识别，<strong>每次识别到二维码会保存该帧画面与内容</strong>，显示在下方的识别记录中（同一二维码 3 秒内不重复）。</p>
   <section class="play-urls">
-    <h2 class="play-title">观看地址</h2>
-    <p class="play-item"><strong>HTTP-FLV</strong> <a id="linkFlv" href="#" target="_blank" rel="noopener"></a></p>
-    <p class="play-item"><strong>HLS</strong> <a id="linkHls" href="#" target="_blank" rel="noopener"></a></p>
-    <p class="play-item"><strong>WebRTC (WHEP)</strong> <a id="linkWhep" href="#" target="_blank" rel="noopener"></a></p>
     <div class="audio-play-wrap">
       <span class="play-title" style="margin:0;">纯音频流 (WebRTC)</span>
       <button type="button" id="btnPlayAudio">播放音频</button>
@@ -243,15 +239,10 @@
       var API_UPLOAD_PIC = API_BASE + '/livestore/upload/pic';
       var API_GET_LIVESTREAM = API_BASE + '/livestore';
 
-      document.getElementById('linkFlv').href = BASE + '/live/' + STREAM_NAME + '.flv';
-      document.getElementById('linkFlv').textContent = BASE + '/live/' + STREAM_NAME + '.flv';
-      document.getElementById('linkHls').href = BASE + '/live/' + STREAM_NAME + '.m3u8';
-      document.getElementById('linkHls').textContent = BASE + '/live/' + STREAM_NAME + '.m3u8';
-      document.getElementById('linkWhep').href = BASE + '/rtc/v1/whep/?app=live&stream=' + STREAM_NAME;
-      document.getElementById('linkWhep').textContent = BASE + '/rtc/v1/whep/?app=live&stream=' + STREAM_NAME;
-
       const WHIP_URL = BASE + '/rtc/v1/whip/?app=live&stream=' + STREAM_NAME + '&secret=' + SECRET;
-      const WHEP_AUDIO_URL = BASE + '/rtc/v1/whep/?app=live&stream=audio&secret=' + SECRET;
+      // 音频播放使用 WHIP 协议，stream 参数为登录的手机号
+      var mobile = loginData.mobile || '';
+      var WHIP_AUDIO_URL = BASE + '/rtc/v1/whip/?app=audio&stream=' + encodeURIComponent(mobile) + '&secret=' + SECRET;
       const STORAGE_KEY = 'liveh5_qr_results';
       const DEDUPE_MS = 3000;
       const MAX_ITEMS = 30;
@@ -278,7 +269,6 @@
       let localStream = null;
       let currentFacingMode = 'user';
       let playPc = null;
-      let whepResourceUrl = null;
       let qrRunning = false;
       let rafId = null;
       let lastQrData = '';
@@ -819,20 +809,13 @@
 
       async function startAudioPlay() {
         if (playPc) return;
+        if (!loginData || !loginData.mobile) {
+          setStatus('无法播放音频：未获取到手机号', 'error');
+          return;
+        }
         btnPlayAudio.disabled = true;
         setStatus('正在连接音频流…', 'pending');
         try {
-          var res = await fetch(WHEP_AUDIO_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/sdp' },
-            body: ''
-          });
-          if (!res.ok) {
-            var text = await res.text();
-            throw new Error('服务器 ' + res.status + (text ? ': ' + text.slice(0, 150) : ''));
-          }
-          whepResourceUrl = res.headers.get('Location') || res.url;
-          var offerSdp = await res.text();
           playPc = new RTCPeerConnection({
             iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
           });
@@ -850,18 +833,25 @@
               setStatus('音频连接失败', 'error');
             }
           });
-          await playPc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
-          var answer = await playPc.createAnswer();
-          await playPc.setLocalDescription(answer);
-          var patchRes = await fetch(whepResourceUrl, {
-            method: 'PATCH',
+          
+          // WHIP 协议：客户端创建 offer，POST 到服务器，服务器返回 answer
+          const offer = await playPc.createOffer();
+          await playPc.setLocalDescription(offer);
+          
+          var res = await fetch(WHIP_AUDIO_URL, {
+            method: 'POST',
             headers: { 'Content-Type': 'application/sdp' },
-            body: playPc.localDescription.sdp
+            body: offer.sdp
           });
-          if (!patchRes.ok) {
-            var t = await patchRes.text();
-            throw new Error('PATCH ' + patchRes.status + (t ? ': ' + t.slice(0, 100) : ''));
+          
+          if (!res.ok) {
+            var text = await res.text();
+            throw new Error('服务器 ' + res.status + (text ? ': ' + text.slice(0, 150) : ''));
           }
+          
+          const answerSdp = await res.text();
+          await playPc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+          
           setStatus('音频流已连接，正在播放', 'ok');
           btnPlayAudio.disabled = true;
           btnStopAudio.disabled = false;
@@ -877,7 +867,6 @@
           playPc.close();
           playPc = null;
         }
-        whepResourceUrl = null;
         remoteAudio.srcObject = null;
         btnPlayAudio.disabled = false;
         btnStopAudio.disabled = true;
