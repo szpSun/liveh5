@@ -240,6 +240,7 @@
       var API_CHECK_STATUS = API_BASE + '/user/check/status';
       var API_UPDATE_STREAM_STATE = API_BASE + '/livestore/stream/update/state';
       var API_SAVE_STREAM_URL = API_BASE + '/livestore/stream/save';
+      var API_UPLOAD_PIC = API_BASE + '/livestore/upload/pic';
 
       document.getElementById('linkFlv').href = BASE + '/live/' + STREAM_NAME + '.flv';
       document.getElementById('linkFlv').textContent = BASE + '/live/' + STREAM_NAME + '.flv';
@@ -390,6 +391,40 @@
         return json;
       }
 
+      // 上传二维码截图
+      async function uploadQrPic(userId, liveStreamId, requestId, codeResult, imageBlob) {
+        var url = API_UPLOAD_PIC
+          + '?userId=' + encodeURIComponent(userId)
+          + '&liveStreamId=' + encodeURIComponent(liveStreamId)
+          + '&requestId=' + encodeURIComponent(requestId || '')
+          + '&codeResult=' + encodeURIComponent(codeResult);
+        
+        var formData = new FormData();
+        formData.append('file', imageBlob, 'qr_' + Date.now() + '.jpg');
+        
+        var headers = getAuthHeaders(false);
+        // FormData 不需要手动设置 Content-Type，浏览器会自动设置并带上 boundary
+        // 删除可能存在的 Content-Type，让浏览器自动设置
+        delete headers['Content-Type'];
+        
+        var res = await fetch(url, {
+          method: 'POST',
+          headers: headers,
+          body: formData
+        });
+        
+        if (!res.ok) {
+          var txt = '';
+          try { txt = await res.text(); } catch (_) {}
+          throw new Error('上传二维码截图失败：' + res.status + (txt ? ' - ' + txt.slice(0, 120) : ''));
+        }
+        var json = await res.json();
+        if (json.code !== 0) {
+          throw new Error(json.msg || '上传二维码截图失败');
+        }
+        return json;
+      }
+
       // 保存/更新用户直播流地址到 live_stream_list 表
       async function saveLiveStream(userId, url, requestId) {
         // 调试：输出参数值
@@ -515,6 +550,29 @@
         list.push({ data: data, time: now, frameDataUrl: frameDataUrl || null });
         saveResults(list);
         renderLog();
+        
+        // 上传二维码截图到服务器
+        if (frameDataUrl && loginData && loginData.userId) {
+          (async function() {
+            try {
+              // 将 base64 转换为 Blob
+              var response = await fetch(frameDataUrl);
+              var blob = await response.blob();
+              
+              // 使用 STREAM_NAME 作为 liveStreamId（如果后端需要其他值，可以调整）
+              var liveStreamId = STREAM_NAME;
+              var userId = loginData.userId;
+              var requestId = savedRequestId || '';
+              
+              await uploadQrPic(userId, liveStreamId, requestId, data, blob);
+              console.log('二维码截图上传成功：', data);
+            } catch (e) {
+              console.warn('上传二维码截图失败：', e);
+              // 静默失败，不影响本地保存
+            }
+          })();
+        }
+        
         return true;
       }
 
