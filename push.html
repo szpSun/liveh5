@@ -286,6 +286,7 @@
       let hasRequestedLive = false;
       let requestCountdownTimer = null;
       let requestCountdownEndTime = 0;
+      let savedRequestId = null; // 保存请求直播时获取的 requestId
 
       // ===== 直播请求相关封装方法 =====
       function ensureLoginValid() {
@@ -746,6 +747,7 @@
 
         // 用户主动停止后，本轮直播请求流程结束，不再根据 SUCCESS 自动重新开播
         hasRequestedLive = false;
+        savedRequestId = null; // 清除保存的 requestId
       }
 
       async function startAudioPlay() {
@@ -865,11 +867,8 @@
                 && hasRequestedLive
                 && !isPushing
                 && requestCountdownTimer) {
-              let info = null;
-              try {
-                info = await getLiveRequestInfo(userId);
-              } catch (_) {}
-              await handleApprovedAndStart(userId, info);
+              // 不再重新获取 info，直接使用保存的 requestId
+              await handleApprovedAndStart(userId, null);
             }
           } catch (e) {
             // 静默失败，避免打扰用户
@@ -881,25 +880,12 @@
       // 1. 保存直播流地址 2. 更新直播状态为“直播中” 3. 调用 startPush() 真正开播
       async function handleApprovedAndStart(userId, info) {
         if (isPushing) return;
-        var requestId = (info && info.requestId) ? info.requestId : '';
+        // 优先使用保存的 requestId，不再重新获取
+        var requestId = savedRequestId || (info && info.requestId ? info.requestId : '');
         var playUrl = BASE + '/live/' + STREAM_NAME + '.m3u8'; // 这里选择上报 HLS 播放地址
         
-        // 如果 info 为空或没有 requestId，尝试重新获取一次
-        if (!info || !requestId) {
-          try {
-            info = await getLiveRequestInfo(userId);
-            console.log('重新获取的 info：', info);
-            if (info && info.requestId) {
-              requestId = info.requestId;
-              console.log('从 info 中获取到 requestId：', requestId);
-            }
-          } catch (e) {
-            console.warn('重新获取直播请求详情失败：', e);
-          }
-        }
-        
         // 调试：输出最终要传递的参数
-        console.log('准备调用 saveLiveStream，参数：', { userId: userId, playUrl: playUrl, requestId: requestId, info: info });
+        console.log('准备调用 saveLiveStream，参数：', { userId: userId, playUrl: playUrl, requestId: requestId, savedRequestId: savedRequestId });
         
         // 无论是否有 requestId，都尝试调用保存接口（后端可能允许空 requestId）
         try {
@@ -942,11 +928,16 @@
           }
           hasRequestedLive = true;
 
-          // 获取请求详情与状态，仅用于展示
+          // 获取请求详情与状态，并保存 requestId
           var info = null;
           var status = '';
           try {
             info = await getLiveRequestInfo(userId);
+            // 保存 requestId，供后续 SUCCESS 时使用
+            if (info && info.requestId) {
+              savedRequestId = info.requestId;
+              console.log('保存 requestId：', savedRequestId);
+            }
           } catch (_) {}
           try {
             status = await getLiveRequestStatus(userId);
