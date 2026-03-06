@@ -240,9 +240,16 @@
       var API_GET_LIVESTREAM = API_BASE + '/livestore';
 
       const WHIP_URL = BASE + '/rtc/v1/whip/?app=live&stream=' + STREAM_NAME + '&secret=' + SECRET;
-      // 音频播放使用 WHIP 协议，stream 参数为登录的手机号
-      var mobile = loginData.mobile || '';
-      var WHIP_AUDIO_URL = BASE + '/rtc/v1/whip/?app=audio&stream=' + encodeURIComponent(mobile) + '&secret=' + SECRET;
+      
+      // 音频播放 URL 构建函数（延迟构建，确保手机号已加载）
+      function getWhipAudioUrl() {
+        var mobile = loginData.mobile || '';
+        if (!mobile) {
+          console.error('无法构建音频播放 URL：手机号为空');
+          return null;
+        }
+        return BASE + '/rtc/v1/whip/?app=audio&stream=' + encodeURIComponent(mobile) + '&secret=' + SECRET;
+      }
       const STORAGE_KEY = 'liveh5_qr_results';
       const DEDUPE_MS = 3000;
       const MAX_ITEMS = 30;
@@ -813,6 +820,16 @@
           setStatus('无法播放音频：未获取到手机号', 'error');
           return;
         }
+        
+        var whipAudioUrl = getWhipAudioUrl();
+        if (!whipAudioUrl) {
+          setStatus('无法播放音频：手机号无效', 'error');
+          return;
+        }
+        
+        console.log('音频播放 URL：', whipAudioUrl);
+        console.log('手机号：', loginData.mobile);
+        
         btnPlayAudio.disabled = true;
         setStatus('正在连接音频流…', 'pending');
         try {
@@ -838,14 +855,20 @@
           const offer = await playPc.createOffer();
           await playPc.setLocalDescription(offer);
           
-          var res = await fetch(WHIP_AUDIO_URL, {
+          console.log('发送 WHIP offer，URL：', whipAudioUrl);
+          
+          var res = await fetch(whipAudioUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/sdp' },
             body: offer.sdp
           });
           
+          console.log('WHIP 响应状态：', res.status, res.statusText);
+          
           if (!res.ok) {
-            var text = await res.text();
+            var text = '';
+            try { text = await res.text(); } catch (_) {}
+            console.error('WHIP 请求失败，响应内容：', text);
             throw new Error('服务器 ' + res.status + (text ? ': ' + text.slice(0, 150) : ''));
           }
           
@@ -856,6 +879,7 @@
           btnPlayAudio.disabled = true;
           btnStopAudio.disabled = false;
         } catch (e) {
+          console.error('播放音频异常：', e);
           setStatus('播放音频失败: ' + (e.message || e.name), 'error');
           stopAudioPlay();
           btnPlayAudio.disabled = false;
