@@ -753,15 +753,24 @@
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
 
+          console.log('发送推流请求，URL：', WHIP_URL);
           const response = await fetch(WHIP_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/sdp' },
             body: offer.sdp
           });
 
+          console.log('推流响应状态：', response.status, response.statusText);
+
           if (!response.ok) {
             const text = await response.text();
-            throw new Error('服务器返回 ' + response.status + (text ? ': ' + text.slice(0, 200) : ''));
+            var errorMsg = '服务器返回 ' + response.status + (text ? ': ' + text.slice(0, 200) : '');
+            console.error('推流失败：', errorMsg);
+            // 如果推流失败时音频正在播放，记录日志
+            if (playPc) {
+              console.warn('推流失败时音频播放连接状态：', playPc.connectionState);
+            }
+            throw new Error(errorMsg);
           }
 
           const answerSdp = await response.text();
@@ -851,6 +860,8 @@
             ],
             iceCandidatePoolSize: 10 // 预收集候选，加快连接
           });
+          // 明确指定只接收音频流
+          playPc.addTransceiver('audio', { direction: 'recvonly' });
           playPc.ontrack = function (e) {
             if (e.streams && e.streams[0]) {
               remoteAudio.srcObject = e.streams[0];
@@ -879,16 +890,21 @@
             throw new Error('生成 SDP 失败');
           }
           
+          console.log('发送音频播放请求，URL：', whepAudioUrl);
           var res = await fetch(whepAudioUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/sdp' },
             body: localSdp
           });
           
+          console.log('音频播放响应状态：', res.status, res.statusText);
+          
           if (!res.ok) {
             var text = '';
             try { text = await res.text(); } catch (_) {}
-            throw new Error('WHEP POST 失败：' + res.status + (text ? ' - ' + text.slice(0, 100) : ''));
+            var errorMsg = 'WHEP POST 失败：' + res.status + (text ? ' - ' + text.slice(0, 100) : '');
+            console.error('音频播放失败，但不影响推流：', errorMsg);
+            throw new Error(errorMsg);
           }
           
           const answerSdp = await res.text();
@@ -900,7 +916,14 @@
           btnStopAudio.disabled = false;
         } catch (e) {
           console.error('播放音频异常：', e);
-          setStatus('播放音频失败: ' + (e.message || e.name), 'error');
+          // 音频播放失败不影响推流，只更新音频相关状态
+          var errorMsg = '播放音频失败: ' + (e.message || e.name);
+          // 如果推流正在进行，状态栏显示推流状态，音频错误只在控制台显示
+          if (!isPushing) {
+            setStatus(errorMsg, 'error');
+          } else {
+            console.warn(errorMsg + '（推流不受影响）');
+          }
           stopAudioPlay();
           btnPlayAudio.disabled = false;
         }
@@ -908,13 +931,27 @@
 
       function stopAudioPlay() {
         if (playPc) {
-          playPc.close();
+          try {
+            playPc.close();
+          } catch (e) {
+            console.warn('关闭音频连接时出错：', e);
+          }
           playPc = null;
         }
-        remoteAudio.srcObject = null;
+        if (remoteAudio && remoteAudio.srcObject) {
+          try {
+            remoteAudio.srcObject.getTracks().forEach(function(t) { t.stop(); });
+          } catch (e) {
+            console.warn('停止音频轨道时出错：', e);
+          }
+          remoteAudio.srcObject = null;
+        }
         btnPlayAudio.disabled = false;
         btnStopAudio.disabled = true;
-        if (!localStream && !pc) setStatus('就绪', 'pending');
+        // 只有在没有推流时才更新状态，避免覆盖推流状态
+        if (!localStream && !pc) {
+          setStatus('就绪', 'pending');
+        }
       }
 
       // “请求直播”冷却倒计时：点击后 3 分钟内按钮置灰，右侧显示读秒
