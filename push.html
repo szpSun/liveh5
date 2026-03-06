@@ -868,14 +868,21 @@
             }
           });
           
-          // WHEP 协议标准流程：
-          // 1. POST 到 WHEP endpoint（body 为空），服务器返回 offer SDP 和 Location header
-          // 2. 客户端设置远程 offer，创建 answer
-          // 3. PATCH 到 Location URL，body 是 answer SDP
+          // WHEP 协议流程（根据服务器实际支持的方式，与 whep-listener 保持一致）：
+          // 1. 客户端创建 offer
+          // 2. POST 到 WHEP endpoint（body 是 offer SDP），服务器返回 answer SDP
+          // 3. 客户端设置远程 answer
+          const offer = await playPc.createOffer();
+          await playPc.setLocalDescription(offer);
+          const localSdp = playPc.localDescription && playPc.localDescription.sdp;
+          if (!localSdp) {
+            throw new Error('生成 SDP 失败');
+          }
+          
           var res = await fetch(whepAudioUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/sdp' },
-            body: ''
+            body: localSdp
           });
           
           if (!res.ok) {
@@ -884,25 +891,8 @@
             throw new Error('WHEP POST 失败：' + res.status + (text ? ' - ' + text.slice(0, 100) : ''));
           }
           
-          var whepResourceUrl = res.headers.get('Location') || res.url;
-          var offerSdp = await res.text();
-          
-          await playPc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
-          var answer = await playPc.createAnswer();
-          await playPc.setLocalDescription(answer);
-          
-          // 不等待 ICE 收集完成，直接发送 answer SDP（服务器会处理）
-          // 这样可以大大加快连接速度
-          var patchRes = await fetch(whepResourceUrl, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/sdp' },
-            body: playPc.localDescription.sdp
-          });
-          
-          if (!patchRes.ok) {
-            var t = await patchRes.text();
-            throw new Error('WHEP PATCH 失败：' + patchRes.status + (t ? ' - ' + t.slice(0, 100) : ''));
-          }
+          const answerSdp = await res.text();
+          await playPc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
           
           // 状态会在 connectionstatechange 事件中更新为 'connected' 时自动设置为 'ok'
           // 这里先设置为 pending，等待连接建立
