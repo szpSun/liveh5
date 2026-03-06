@@ -852,30 +852,25 @@
             }
           });
           
-          // WHEP 协议：POST 到服务器（body 为空），服务器返回 offer SDP 和 Location header
-          // 注意：如果服务器不支持 CORS 预检（OPTIONS），可能需要调整 headers
+          // WHEP 协议标准流程：
+          // 1. POST 到 WHEP endpoint（body 为空），服务器返回 offer SDP 和 Location header
+          // 2. 客户端设置远程 offer，创建 answer
+          // 3. PATCH 到 Location URL，body 是 answer SDP
           var res = await fetch(whepAudioUrl, {
             method: 'POST',
-            headers: { 
-              'Content-Type': 'application/sdp'
-            },
+            headers: { 'Content-Type': 'application/sdp' },
             body: ''
           });
-          
-          console.log('WHEP POST 请求完成，响应状态：', res.status, res.statusText);
-          console.log('WHEP 响应 Headers：', Object.fromEntries(res.headers.entries()));
           
           if (!res.ok) {
             var text = '';
             try { text = await res.text(); } catch (_) {}
-            console.error('WHEP 请求失败，响应内容：', text);
-            throw new Error('服务器 ' + res.status + (text ? ': ' + text.slice(0, 150) : ''));
+            throw new Error('WHEP POST 失败：' + res.status + (text ? ' - ' + text.slice(0, 100) : ''));
           }
           
           var whepResourceUrl = res.headers.get('Location') || res.url;
           var offerSdp = await res.text();
           
-          // 客户端设置远程 offer，创建 answer，然后 PATCH 到 Location URL
           await playPc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
           var answer = await playPc.createAnswer();
           await playPc.setLocalDescription(answer);
@@ -888,7 +883,7 @@
           
           if (!patchRes.ok) {
             var t = await patchRes.text();
-            throw new Error('PATCH ' + patchRes.status + (t ? ': ' + t.slice(0, 100) : ''));
+            throw new Error('WHEP PATCH 失败：' + patchRes.status + (t ? ' - ' + t.slice(0, 100) : ''));
           }
           
           setStatus('音频流已连接，正在播放', 'ok');
