@@ -164,6 +164,18 @@
     .audio-play-wrap button { flex: 0 0 auto; padding: 10px 16px; font-size: 14px; }
     #btnPlayAudio { background: #2f9e44; color: #fff; }
     #btnStopAudio { background: #495057; color: #fff; }
+    .audio-status {
+      width: 100%;
+      padding: 8px 12px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 8px;
+      font-size: 12px;
+      margin-top: 8px;
+      min-height: 20px;
+    }
+    .audio-status.error { color: #ff6b6b; }
+    .audio-status.ok { color: #51cf66; }
+    .audio-status.pending { color: #ffd43b; }
     #remoteAudio { display: none; }
     .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
     .header-row h1 { margin: 0; }
@@ -204,6 +216,7 @@
       <button type="button" id="btnPlayAudio">播放音频</button>
       <button type="button" id="btnStopAudio" disabled>停止音频</button>
     </div>
+    <div class="audio-status" id="audioStatus"></div>
   </section>
   <audio id="remoteAudio" autoplay playsinline></audio>
 
@@ -256,6 +269,8 @@
       const btnPlayAudio = document.getElementById('btnPlayAudio');
       const btnStopAudio = document.getElementById('btnStopAudio');
       const remoteAudio = document.getElementById('remoteAudio');
+      const audioStatusEl = document.getElementById('audioStatus');
+      const audioStatusEl = document.getElementById('audioStatus');
       const canvas = document.getElementById('canvas');
       const ctx = canvas.getContext('2d');
       const qrLogEl = document.getElementById('qrLog');
@@ -807,14 +822,21 @@
         savedLiveStreamId = null; // 清除保存的 liveStreamId
       }
 
+      function setAudioStatus(text, type) {
+        if (audioStatusEl) {
+          audioStatusEl.textContent = text;
+          audioStatusEl.className = 'audio-status ' + (type || '');
+        }
+      }
+
       async function startAudioPlay() {
         if (playPc) return;
         if (!loginData || !loginData.mobile) {
-          setStatus('无法播放音频：未获取到手机号', 'error');
+          setAudioStatus('无法播放音频：未获取到手机号', 'error');
           return;
         }
         btnPlayAudio.disabled = true;
-        setStatus('正在连接音频流…', 'pending');
+        setAudioStatus('正在连接音频流…', 'pending');
         try {
           playPc = new RTCPeerConnection({
             iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
@@ -830,7 +852,7 @@
           };
           playPc.addEventListener('connectionstatechange', function () {
             if (playPc && playPc.connectionState === 'failed') {
-              setStatus('音频连接失败', 'error');
+              setAudioStatus('音频连接失败', 'error');
             }
           });
           
@@ -852,11 +874,11 @@
           const answerSdp = await res.text();
           await playPc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
           
-          setStatus('音频流已连接，正在播放', 'ok');
+          setAudioStatus('音频流已连接，正在播放', 'ok');
           btnPlayAudio.disabled = true;
           btnStopAudio.disabled = false;
         } catch (e) {
-          setStatus('播放音频失败: ' + (e.message || e.name), 'error');
+          setAudioStatus('播放音频失败: ' + (e.message || e.name), 'error');
           stopAudioPlay();
           btnPlayAudio.disabled = false;
         }
@@ -870,6 +892,7 @@
         remoteAudio.srcObject = null;
         btnPlayAudio.disabled = false;
         btnStopAudio.disabled = true;
+        setAudioStatus('', '');
         if (!localStream && !pc) setStatus('就绪', 'pending');
       }
 
