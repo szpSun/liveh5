@@ -145,8 +145,10 @@
         log('创建 WebRTC offer...');
         const offer = await conn.createOffer();
         await conn.setLocalDescription(offer);
-        log('等待 ICE 候选收集（最多等待 5 秒）...');
-        await waitIceGatheringComplete(conn, 5000); // 5秒超时
+        
+        // 不等待 ICE 收集完成，直接发送 SDP（服务器会处理）
+        // 这样可以大大加快连接速度
+        log('立即发送 SDP（不等待 ICE 收集完成）...');
         const localSdp = conn.localDescription && conn.localDescription.sdp;
         if (!localSdp) {
           log('生成 SDP 失败');
