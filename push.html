@@ -150,22 +150,21 @@
       line-height: 1.5;
     }
     .play-urls {
-      display: none; /* 隐藏纯音频流播放区域 */
+      margin-top: 16px;
+      padding: 12px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 8px;
+      font-size: 12px;
     }
     .play-title { font-size: 14px; margin: 0 0 10px; color: #fff; }
     .play-item { margin: 6px 0; word-break: break-all; }
     .play-item a { color: #74c0fc; text-decoration: none; }
     .play-item a:active { opacity: 0.8; }
-    .audio-play-wrap { display: none; /* 隐藏音频播放按钮 */ }
+    .audio-play-wrap { display: flex; gap: 12px; margin-top: 12px; align-items: center; flex-wrap: wrap; }
     .audio-play-wrap button { flex: 0 0 auto; padding: 10px 16px; font-size: 14px; }
-    #btnPlayAudio { display: none; }
-    #btnStopAudio { display: none; }
+    #btnPlayAudio { background: #2f9e44; color: #fff; }
+    #btnStopAudio { background: #495057; color: #fff; }
     #remoteAudio { display: none; }
-    /* 隐藏 WHEP 监听器 UI */
-    #whepListenerUrl, #btnWhepConnect, #btnWhepStop, #whepAudio, #whepLog,
-    h2.section-title:has(+ #whepListenerUrl),
-    h3:has(+ #whepAudio),
-    h3:has(+ #whepLog) { display: none !important; }
     .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
     .header-row h1 { margin: 0; }
     .link-out { font-size: 14px; color: #74c0fc; text-decoration: none; }
@@ -199,8 +198,32 @@
   <button type="button" class="btn-clear" id="btnClearLog">清空记录</button>
 
   <p class="tip">需用 <strong>HTTPS 或 localhost</strong> 打开此页。发起直播并开始推流后会对画面做二维码识别，<strong>每次识别到二维码会保存该帧画面与内容</strong>，显示在下方的识别记录中（同一二维码 3 秒内不重复）。</p>
-  <!-- 隐藏的音频播放器，用于自动播放 WHEP 音频 -->
-  <audio id="whepAutoAudio" autoplay playsinline style="display: none;"></audio>
+  <section class="play-urls">
+    <div class="audio-play-wrap">
+      <span class="play-title" style="margin:0;">纯音频流 (WebRTC)</span>
+      <button type="button" id="btnPlayAudio">播放音频</button>
+      <button type="button" id="btnStopAudio" disabled>停止音频</button>
+    </div>
+  </section>
+  <audio id="remoteAudio" autoplay playsinline></audio>
+
+  <h2 class="section-title" style="margin-top: 24px;">WHEP 音频监听器</h2>
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 13px; color: #adb5bd; margin-bottom: 6px;">WHEP 地址：</label>
+    <input type="text" id="whepListenerUrl" style="width: 100%; padding: 10px 12px; font-size: 14px; border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; background: rgba(0,0,0,0.2); color: #eee; outline: none; box-sizing: border-box;" placeholder="输入 WHEP 地址" />
+  </div>
+  <div style="margin-bottom: 12px;">
+    <button type="button" id="btnWhepConnect" style="padding: 10px 20px; margin-right: 8px; font-size: 14px; font-weight: 600; border: none; border-radius: 8px; cursor: pointer; background: linear-gradient(135deg, #339af0, #228be6); color: #fff;">开始收听</button>
+    <button type="button" id="btnWhepStop" style="padding: 10px 20px; font-size: 14px; font-weight: 600; border: none; border-radius: 8px; cursor: pointer; background: #495057; color: #fff;" disabled>停止</button>
+  </div>
+  <div style="margin-bottom: 12px;">
+    <h3 style="font-size: 14px; margin: 0 0 8px; color: #fff;">音频：</h3>
+    <audio id="whepAudio" controls autoplay playsinline style="width: 100%;"></audio>
+  </div>
+  <div>
+    <h3 style="font-size: 14px; margin: 0 0 8px; color: #fff;">日志：</h3>
+    <div id="whepLog" style="padding: 12px; background: rgba(255,255,255,0.06); border-radius: 8px; font-size: 12px; max-height: 200px; overflow-y: auto; white-space: pre-wrap; color: #adb5bd; min-height: 60px;"></div>
+  </div>
 
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
   <script>
@@ -1055,9 +1078,17 @@
       let whepListenerPc = null;
 
       // 初始化 WHEP 监听器 URL（使用当前登录用户的手机号）
-      if (loginData && loginData.mobile) {
-        whepListenerUrl.value = BASE + '/rtc/v1/whep/?app=audio&stream=' + encodeURIComponent(loginData.mobile);
+      function initWhepUrl() {
+        if (loginData && loginData.mobile) {
+          var url = 'https://livenew.h3r.website/rtc/v1/whep/?app=audio&stream=' + encodeURIComponent(loginData.mobile);
+          whepListenerUrl.value = url;
+          return url;
+        }
+        return null;
       }
+      
+      // 初始化 URL
+      initWhepUrl();
 
       function whepLog(...args) {
         const line = args
@@ -1194,110 +1225,38 @@
       btnWhepStop.addEventListener('click', stopWhepListen);
       window.addEventListener('beforeunload', whepCleanup);
 
-      // ===== 自动播放 WHEP 音频（页面加载时自动启动） =====
-      let autoWhepPc = null;
-      const autoWhepAudio = document.getElementById('whepAutoAudio');
-
-      async function startAutoWhepAudio() {
+      // 页面加载完成后自动开始收听 WHEP 音频流
+      function autoStartWhepListen() {
+        // 确保登录数据已加载
         if (!loginData || !loginData.mobile) {
-          console.warn('[自动WHEP] 未获取到手机号，无法自动播放音频');
+          console.warn('[自动WHEP] 未获取到手机号，延迟启动');
+          setTimeout(autoStartWhepListen, 500);
           return;
         }
         
-        const url = BASE + '/rtc/v1/whep/?app=audio&stream=' + encodeURIComponent(loginData.mobile);
-        console.log('[自动WHEP] 开始自动连接音频流:', url);
-        
-        try {
-          if (autoWhepPc) {
-            try {
-              autoWhepPc.close();
-            } catch (e) {}
-            autoWhepPc = null;
-          }
-          
-          const conn = new RTCPeerConnection({
-            iceServers: [
-              { urls: 'stun:stun.l.google.com:19302' },
-              { urls: 'stun:stun1.l.google.com:19302' },
-              { urls: 'stun:stun2.l.google.com:19302' },
-              { urls: 'stun:stun3.l.google.com:19302' },
-              { urls: 'stun:stun4.l.google.com:19302' }
-            ],
-            iceCandidatePoolSize: 10
-          });
-          autoWhepPc = conn;
-          conn.addTransceiver('audio', { direction: 'recvonly' });
-          conn.ontrack = (ev) => {
-            const [stream] = ev.streams;
-            if (stream) {
-              console.log('[自动WHEP] 收到音频流');
-              autoWhepAudio.srcObject = stream;
-            }
-          };
-          conn.onconnectionstatechange = () => {
-            console.log('[自动WHEP] connectionState =', conn.connectionState);
-            if (conn.connectionState === 'failed') {
-              console.warn('[自动WHEP] 连接失败，将在 3 秒后重试');
-              setTimeout(() => {
-                if (!autoWhepPc || autoWhepPc.connectionState === 'failed') {
-                  startAutoWhepAudio();
-                }
-              }, 3000);
-            }
-          };
-          
-          const offer = await conn.createOffer();
-          await conn.setLocalDescription(offer);
-          const localSdp = conn.localDescription && conn.localDescription.sdp;
-          if (!localSdp) {
-            throw new Error('生成 SDP 失败');
-          }
-          
-          const res = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/sdp' },
-            body: localSdp,
-          });
-          
-          if (!res.ok) {
-            const text = await res.text().catch(() => '');
-            throw new Error('WHEP POST 失败：' + res.status + (text ? ' - ' + text.slice(0, 100) : ''));
-          }
-          
-          const answerSdp = await res.text();
-          await conn.setRemoteDescription({ type: 'answer', sdp: answerSdp });
-          console.log('[自动WHEP] 已设置远端 SDP，等待连接建立...');
-        } catch (e) {
-          console.error('[自动WHEP] 连接失败:', e);
-          // 失败后 3 秒重试
-          setTimeout(() => {
-            startAutoWhepAudio();
-          }, 3000);
+        // 初始化 URL
+        var url = initWhepUrl();
+        if (!url) {
+          console.warn('[自动WHEP] 无法构建 URL');
+          return;
         }
+        
+        console.log('[自动WHEP] 自动开始收听音频流:', url);
+        whepLog('自动开始连接 WHEP 音频流...');
+        startWhepListen().catch((e) => {
+          console.error('[自动WHEP] 连接失败:', e);
+          whepLog('自动连接失败:', e && e.message ? e.message : e);
+        });
       }
 
-      // 页面加载完成后自动启动音频播放
+      // 页面加载完成后自动启动
       if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', startAutoWhepAudio);
+        document.addEventListener('DOMContentLoaded', function() {
+          setTimeout(autoStartWhepListen, 500);
+        });
       } else {
-        // 延迟一点启动，确保其他初始化完成
-        setTimeout(startAutoWhepAudio, 500);
+        setTimeout(autoStartWhepListen, 500);
       }
-      
-      window.addEventListener('beforeunload', function() {
-        if (autoWhepPc) {
-          try {
-            autoWhepPc.close();
-          } catch (e) {}
-          autoWhepPc = null;
-        }
-        if (autoWhepAudio && autoWhepAudio.srcObject) {
-          try {
-            autoWhepAudio.srcObject.getTracks().forEach((t) => t.stop());
-          } catch (e) {}
-          autoWhepAudio.srcObject = null;
-        }
-      });
 
       // 点击"请求直播"按钮的处理：先发起/检查直播请求，只有审批通过才开始推流
       btnStart.addEventListener('click', async function () {
