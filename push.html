@@ -973,7 +973,8 @@
         if (isPushing) return;
         // 优先使用保存的 requestId，不再重新获取
         var requestId = savedRequestId || (info && info.requestId ? info.requestId : '');
-        var playUrl = BASE + '/live/' + STREAM_NAME + '.m3u8'; // 这里选择上报 HLS 播放地址
+        // 保存 WebRTC (WHEP) 播放地址
+        var playUrl = BASE + '/rtc/v1/whep/?app=live&stream=' + STREAM_NAME;
         
         // 调试：输出最终要传递的参数
         console.log('准备调用 saveLiveStream，参数：', { userId: userId, playUrl: playUrl, requestId: requestId, savedRequestId: savedRequestId });
