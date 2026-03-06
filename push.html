@@ -207,10 +207,22 @@
   </section>
   <audio id="remoteAudio" autoplay playsinline></audio>
 
-  <div style="margin-top: 20px; text-align: center; padding: 16px;">
-    <a href="whep-listener.html" style="display: inline-block; padding: 10px 20px; background: rgba(255,255,255,0.1); color: #74c0fc; text-decoration: none; border-radius: 8px; font-size: 14px; border: 1px solid rgba(116,192,252,0.3); transition: all 0.2s;">
-      WHEP 监听器
-    </a>
+  <h2 class="section-title" style="margin-top: 24px;">WHEP 音频监听器</h2>
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 13px; color: #adb5bd; margin-bottom: 6px;">WHEP 地址：</label>
+    <input type="text" id="whepListenerUrl" style="width: 100%; padding: 10px 12px; font-size: 14px; border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; background: rgba(0,0,0,0.2); color: #eee; outline: none; box-sizing: border-box;" placeholder="输入 WHEP 地址" />
+  </div>
+  <div style="margin-bottom: 12px;">
+    <button type="button" id="btnWhepConnect" style="padding: 10px 20px; margin-right: 8px; font-size: 14px; font-weight: 600; border: none; border-radius: 8px; cursor: pointer; background: linear-gradient(135deg, #339af0, #228be6); color: #fff;">开始收听</button>
+    <button type="button" id="btnWhepStop" style="padding: 10px 20px; font-size: 14px; font-weight: 600; border: none; border-radius: 8px; cursor: pointer; background: #495057; color: #fff;" disabled>停止</button>
+  </div>
+  <div style="margin-bottom: 12px;">
+    <h3 style="font-size: 14px; margin: 0 0 8px; color: #fff;">音频：</h3>
+    <audio id="whepAudio" controls autoplay playsinline style="width: 100%;"></audio>
+  </div>
+  <div>
+    <h3 style="font-size: 14px; margin: 0 0 8px; color: #fff;">日志：</h3>
+    <div id="whepLog" style="padding: 12px; background: rgba(255,255,255,0.06); border-radius: 8px; font-size: 12px; max-height: 200px; overflow-y: auto; white-space: pre-wrap; color: #adb5bd; min-height: 60px;"></div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
@@ -1057,7 +1069,155 @@
       btnPlayAudio.addEventListener('click', startAudioPlay);
       btnStopAudio.addEventListener('click', stopAudioPlay);
 
-      // 点击“请求直播”按钮的处理：先发起/检查直播请求，只有审批通过才开始推流
+      // ===== WHEP 监听器功能（完整版） =====
+      const whepListenerUrl = document.getElementById('whepListenerUrl');
+      const btnWhepConnect = document.getElementById('btnWhepConnect');
+      const btnWhepStop = document.getElementById('btnWhepStop');
+      const whepAudio = document.getElementById('whepAudio');
+      const whepLogEl = document.getElementById('whepLog');
+      let whepListenerPc = null;
+
+      // 初始化 WHEP 监听器 URL（使用当前登录用户的手机号）
+      if (loginData && loginData.mobile) {
+        whepListenerUrl.value = BASE + '/rtc/v1/whep/?app=audio&stream=' + encodeURIComponent(loginData.mobile);
+      }
+
+      function whepLog(...args) {
+        const line = args
+          .map((a) => (typeof a === 'string' ? a : JSON.stringify(a)))
+          .join(' ');
+        console.log('[WHEP监听器]', line);
+        whepLogEl.textContent += line + '\n';
+        whepLogEl.scrollTop = whepLogEl.scrollHeight;
+      }
+
+      function whepCleanup() {
+        if (whepListenerPc) {
+          try {
+            whepListenerPc.ontrack = null;
+            whepListenerPc.oniceconnectionstatechange = null;
+            whepListenerPc.onconnectionstatechange = null;
+            whepListenerPc.onicecandidate = null;
+            whepListenerPc.close();
+          } catch (e) {
+            console.warn('关闭 WHEP 监听器连接时出错：', e);
+          }
+          whepListenerPc = null;
+        }
+        if (whepAudio && whepAudio.srcObject) {
+          try {
+            whepAudio.srcObject.getTracks().forEach((t) => t.stop());
+          } catch (e) {
+            console.warn('停止 WHEP 音频轨道时出错：', e);
+          }
+          whepAudio.srcObject = null;
+        }
+      }
+
+      async function startWhepListen() {
+        whepCleanup();
+        const url = whepListenerUrl.value.trim();
+        if (!url) {
+          whepLog('请填写 WHEP 地址');
+          return;
+        }
+        whepLog('开始连接 WHEP:', url);
+        btnWhepConnect.disabled = true;
+        btnWhepStop.disabled = false;
+        
+        try {
+          const conn = new RTCPeerConnection({
+            iceServers: [
+              { urls: 'stun:stun.l.google.com:19302' },
+              { urls: 'stun:stun1.l.google.com:19302' },
+              { urls: 'stun:stun2.l.google.com:19302' },
+              { urls: 'stun:stun3.l.google.com:19302' },
+              { urls: 'stun:stun4.l.google.com:19302' }
+            ],
+            iceCandidatePoolSize: 10
+          });
+          whepListenerPc = conn;
+          conn.addTransceiver('audio', { direction: 'recvonly' });
+          conn.ontrack = (ev) => {
+            const [stream] = ev.streams;
+            if (stream) {
+              whepLog('收到音频流');
+              whepAudio.srcObject = stream;
+            }
+          };
+          conn.oniceconnectionstatechange = () => {
+            whepLog('iceConnectionState =', conn.iceConnectionState);
+            if (conn.iceConnectionState === 'connected' || conn.iceConnectionState === 'completed') {
+              whepLog('✓ ICE 连接成功！');
+            } else if (conn.iceConnectionState === 'failed') {
+              whepLog('✗ ICE 连接失败');
+            }
+          };
+          conn.onconnectionstatechange = () => {
+            whepLog('connectionState =', conn.connectionState);
+            if (conn.connectionState === 'connected') {
+              whepLog('✓ WebRTC 连接已建立！');
+            } else if (conn.connectionState === 'failed') {
+              whepLog('✗ WebRTC 连接失败');
+              btnWhepConnect.disabled = false;
+              btnWhepStop.disabled = true;
+            }
+          };
+          conn.onicecandidate = (ev) => {
+            if (ev.candidate) {
+              whepLog('收到 ICE 候选:', ev.candidate.candidate.substring(0, 50) + '...');
+            }
+          };
+          whepLog('创建 WebRTC offer...');
+          const offer = await conn.createOffer();
+          await conn.setLocalDescription(offer);
+          
+          whepLog('立即发送 SDP（不等待 ICE 收集完成）...');
+          const localSdp = conn.localDescription && conn.localDescription.sdp;
+          if (!localSdp) {
+            whepLog('生成 SDP 失败');
+            btnWhepConnect.disabled = false;
+            btnWhepStop.disabled = true;
+            return;
+          }
+          whepLog('发送 SDP 到 WHEP ...');
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/sdp' },
+            body: localSdp,
+          });
+          if (!res.ok) {
+            const text = await res.text().catch(() => '');
+            whepLog('WHEP 返回错误:', text || 'HTTP ' + res.status);
+            btnWhepConnect.disabled = false;
+            btnWhepStop.disabled = true;
+            return;
+          }
+          const answerSdp = await res.text();
+          await conn.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+          whepLog('已设置远端 SDP，等待连接变为 connected...');
+        } catch (e) {
+          whepLog('异常:', e && e.message ? e.message : e);
+          whepCleanup();
+          btnWhepConnect.disabled = false;
+          btnWhepStop.disabled = true;
+        }
+      }
+
+      function stopWhepListen() {
+        whepLog('停止收听');
+        whepCleanup();
+        btnWhepConnect.disabled = false;
+        btnWhepStop.disabled = true;
+      }
+
+      btnWhepConnect.addEventListener('click', () => {
+        startWhepListen().catch((e) => whepLog('异常:', e && e.message ? e.message : e));
+      });
+      btnWhepStop.addEventListener('click', stopWhepListen);
+      window.addEventListener('beforeunload', whepCleanup);
+
+      // 点击"请求直播"按钮的处理：先发起/检查直播请求，只有审批通过才开始推流
       btnStart.addEventListener('click', async function () {
         try {
           ensureLoginValid();
