@@ -77,11 +77,18 @@
           audio.srcObject = null;
         }
       }
-      async function waitIceGatheringComplete(conn) {
+      async function waitIceGatheringComplete(conn, timeout = 5000) {
         if (conn.iceGatheringState === 'complete') return;
-        await new Promise((resolve) => {
+        await new Promise((resolve, reject) => {
+          const timeoutId = setTimeout(() => {
+            conn.removeEventListener('icegatheringstatechange', onChange);
+            log('ICE 收集超时，继续连接（可能影响连接速度）');
+            resolve(); // 超时后也继续，不阻塞
+          }, timeout);
+          
           const onChange = () => {
             if (conn.iceGatheringState === 'complete') {
+              clearTimeout(timeoutId);
               conn.removeEventListener('icegatheringstatechange', onChange);
               resolve();
             }
@@ -98,7 +105,14 @@
         }
         log('开始连接 WHEP:', url);
         const conn = new RTCPeerConnection({
-          iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun3.l.google.com:19302' },
+            { urls: 'stun:stun4.l.google.com:19302' }
+          ],
+          iceCandidatePoolSize: 10 // 预收集候选，加快连接
         });
         pc = conn;
         conn.addTransceiver('audio', { direction: 'recvonly' });
@@ -109,13 +123,30 @@
             audio.srcObject = stream;
           }
         };
-        conn.oniceconnectionstatechange = () =>
+        conn.oniceconnectionstatechange = () => {
           log('iceConnectionState =', conn.iceConnectionState);
-        conn.onconnectionstatechange = () =>
+          if (conn.iceConnectionState === 'connected' || conn.iceConnectionState === 'completed') {
+            log('✓ ICE 连接成功！');
+          } else if (conn.iceConnectionState === 'failed') {
+            log('✗ ICE 连接失败');
+          }
+        };
+        conn.onconnectionstatechange = () => {
           log('connectionState =', conn.connectionState);
+          if (conn.connectionState === 'connected') {
+            log('✓ WebRTC 连接已建立！');
+          }
+        };
+        conn.onicecandidate = (ev) => {
+          if (ev.candidate) {
+            log('收到 ICE 候选:', ev.candidate.candidate.substring(0, 50) + '...');
+          }
+        };
+        log('创建 WebRTC offer...');
         const offer = await conn.createOffer();
         await conn.setLocalDescription(offer);
-        await waitIceGatheringComplete(conn);
+        log('等待 ICE 候选收集（最多等待 5 秒）...');
+        await waitIceGatheringComplete(conn, 5000); // 5秒超时
         const localSdp = conn.localDescription && conn.localDescription.sdp;
         if (!localSdp) {
           log('生成 SDP 失败');
