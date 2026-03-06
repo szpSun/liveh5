@@ -840,8 +840,16 @@
         btnPlayAudio.disabled = true;
         setStatus('正在连接音频流…', 'pending');
         try {
+          // 优化：使用多个 STUN 服务器和预收集 ICE 候选，加快连接速度
           playPc = new RTCPeerConnection({
-            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+            iceServers: [
+              { urls: 'stun:stun.l.google.com:19302' },
+              { urls: 'stun:stun1.l.google.com:19302' },
+              { urls: 'stun:stun2.l.google.com:19302' },
+              { urls: 'stun:stun3.l.google.com:19302' },
+              { urls: 'stun:stun4.l.google.com:19302' }
+            ],
+            iceCandidatePoolSize: 10 // 预收集候选，加快连接
           });
           playPc.ontrack = function (e) {
             if (e.streams && e.streams[0]) {
@@ -855,6 +863,8 @@
           playPc.addEventListener('connectionstatechange', function () {
             if (playPc && playPc.connectionState === 'failed') {
               setStatus('音频连接失败', 'error');
+            } else if (playPc && playPc.connectionState === 'connected') {
+              setStatus('音频流已连接，正在播放', 'ok');
             }
           });
           
@@ -881,6 +891,8 @@
           var answer = await playPc.createAnswer();
           await playPc.setLocalDescription(answer);
           
+          // 不等待 ICE 收集完成，直接发送 answer SDP（服务器会处理）
+          // 这样可以大大加快连接速度
           var patchRes = await fetch(whepResourceUrl, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/sdp' },
@@ -892,7 +904,8 @@
             throw new Error('WHEP PATCH 失败：' + patchRes.status + (t ? ' - ' + t.slice(0, 100) : ''));
           }
           
-          setStatus('音频流已连接，正在播放', 'ok');
+          // 状态会在 connectionstatechange 事件中更新为 'connected' 时自动设置为 'ok'
+          // 这里先设置为 pending，等待连接建立
           btnPlayAudio.disabled = true;
           btnStopAudio.disabled = false;
         } catch (e) {
