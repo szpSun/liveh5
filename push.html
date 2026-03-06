@@ -853,13 +853,17 @@
           });
           
           // WHEP 协议：POST 到服务器（body 为空），服务器返回 offer SDP 和 Location header
+          // 注意：如果服务器不支持 CORS 预检（OPTIONS），可能需要调整 headers
           var res = await fetch(whepAudioUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/sdp' },
+            headers: { 
+              'Content-Type': 'application/sdp'
+            },
             body: ''
           });
           
-          console.log('WHEP 响应状态：', res.status, res.statusText);
+          console.log('WHEP POST 请求完成，响应状态：', res.status, res.statusText);
+          console.log('WHEP 响应 Headers：', Object.fromEntries(res.headers.entries()));
           
           if (!res.ok) {
             var text = '';
