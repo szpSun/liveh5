@@ -242,13 +242,14 @@
       const WHIP_URL = BASE + '/rtc/v1/whip/?app=live&stream=' + STREAM_NAME + '&secret=' + SECRET;
       
       // 音频播放 URL 构建函数（延迟构建，确保手机号已加载）
-      function getWhipAudioUrl() {
+      // WHEP 协议用于播放/拉流，WHIP 协议用于推流
+      function getWhepAudioUrl() {
         var mobile = loginData.mobile || '';
         if (!mobile) {
           console.error('无法构建音频播放 URL：手机号为空');
           return null;
         }
-        return BASE + '/rtc/v1/whip/?app=audio&stream=' + encodeURIComponent(mobile) + '&secret=' + SECRET;
+        return BASE + '/rtc/v1/whep/?app=audio&stream=' + encodeURIComponent(mobile);
       }
       const STORAGE_KEY = 'liveh5_qr_results';
       const DEDUPE_MS = 3000;
@@ -821,13 +822,13 @@
           return;
         }
         
-        var whipAudioUrl = getWhipAudioUrl();
-        if (!whipAudioUrl) {
+        var whepAudioUrl = getWhepAudioUrl();
+        if (!whepAudioUrl) {
           setStatus('无法播放音频：手机号无效', 'error');
           return;
         }
         
-        console.log('音频播放 URL：', whipAudioUrl);
+        console.log('音频播放 URL：', whepAudioUrl);
         console.log('手机号：', loginData.mobile);
         
         btnPlayAudio.disabled = true;
@@ -851,29 +852,40 @@
             }
           });
           
-          // WHIP 协议：客户端创建 offer，POST 到服务器，服务器返回 answer
-          const offer = await playPc.createOffer();
-          await playPc.setLocalDescription(offer);
-          
-          console.log('发送 WHIP offer，URL：', whipAudioUrl);
-          
-          var res = await fetch(whipAudioUrl, {
+          // WHEP 协议：POST 到服务器（body 为空），服务器返回 offer SDP 和 Location header
+          var res = await fetch(whepAudioUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/sdp' },
-            body: offer.sdp
+            body: ''
           });
           
-          console.log('WHIP 响应状态：', res.status, res.statusText);
+          console.log('WHEP 响应状态：', res.status, res.statusText);
           
           if (!res.ok) {
             var text = '';
             try { text = await res.text(); } catch (_) {}
-            console.error('WHIP 请求失败，响应内容：', text);
+            console.error('WHEP 请求失败，响应内容：', text);
             throw new Error('服务器 ' + res.status + (text ? ': ' + text.slice(0, 150) : ''));
           }
           
-          const answerSdp = await res.text();
-          await playPc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+          var whepResourceUrl = res.headers.get('Location') || res.url;
+          var offerSdp = await res.text();
+          
+          // 客户端设置远程 offer，创建 answer，然后 PATCH 到 Location URL
+          await playPc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
+          var answer = await playPc.createAnswer();
+          await playPc.setLocalDescription(answer);
+          
+          var patchRes = await fetch(whepResourceUrl, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/sdp' },
+            body: playPc.localDescription.sdp
+          });
+          
+          if (!patchRes.ok) {
+            var t = await patchRes.text();
+            throw new Error('PATCH ' + patchRes.status + (t ? ': ' + t.slice(0, 100) : ''));
+          }
           
           setStatus('音频流已连接，正在播放', 'ok');
           btnPlayAudio.disabled = true;
