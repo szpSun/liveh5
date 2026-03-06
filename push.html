@@ -875,18 +875,29 @@
       // 1. 保存直播流地址 2. 更新直播状态为“直播中” 3. 调用 startPush() 真正开播
       async function handleApprovedAndStart(userId, info) {
         if (isPushing) return;
-        var requestId = info && info.requestId ? info.requestId : '';
+        var requestId = (info && info.requestId) ? info.requestId : '';
         var playUrl = BASE + '/live/' + STREAM_NAME + '.m3u8'; // 这里选择上报 HLS 播放地址
-        try {
-          if (requestId) {
-            await saveLiveStream(userId, playUrl, requestId);
-          } else {
-            console.warn('未获取到 requestId，未调用保存直播流地址接口');
+        
+        // 如果 info 为空，尝试重新获取一次
+        if (!info || !requestId) {
+          try {
+            info = await getLiveRequestInfo(userId);
+            if (info && info.requestId) {
+              requestId = info.requestId;
+            }
+          } catch (e) {
+            console.warn('重新获取直播请求详情失败：', e);
           }
+        }
+        
+        // 无论是否有 requestId，都尝试调用保存接口（后端可能允许空 requestId）
+        try {
+          await saveLiveStream(userId, playUrl, requestId);
         } catch (eStream) {
-          console.warn('保存直播流地址失败：', eStream);
+          console.error('保存直播流地址失败：', eStream);
           // 不阻断后续开播，仅在控制台提示
         }
+        
         try {
           await updateLiveState(userId, 1); // 1-直播中
         } catch (eState) {
