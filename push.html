@@ -391,10 +391,16 @@
 
       // 保存/更新用户直播流地址到 live_stream_list 表
       async function saveLiveStream(userId, url, requestId) {
+        // 调试：输出参数值
+        console.log('saveLiveStream 调用参数：', { userId: userId, url: url, requestId: requestId });
+        
         var full = API_SAVE_STREAM_URL
           + '?userId=' + encodeURIComponent(userId)
           + '&url=' + encodeURIComponent(url)
           + '&requestId=' + encodeURIComponent(requestId || '');
+        
+        console.log('saveLiveStream 请求 URL：', full);
+        
         var res = await fetch(full, {
           method: 'POST',
           headers: getAuthHeaders(false)
@@ -878,17 +884,22 @@
         var requestId = (info && info.requestId) ? info.requestId : '';
         var playUrl = BASE + '/live/' + STREAM_NAME + '.m3u8'; // 这里选择上报 HLS 播放地址
         
-        // 如果 info 为空，尝试重新获取一次
+        // 如果 info 为空或没有 requestId，尝试重新获取一次
         if (!info || !requestId) {
           try {
             info = await getLiveRequestInfo(userId);
+            console.log('重新获取的 info：', info);
             if (info && info.requestId) {
               requestId = info.requestId;
+              console.log('从 info 中获取到 requestId：', requestId);
             }
           } catch (e) {
             console.warn('重新获取直播请求详情失败：', e);
           }
         }
+        
+        // 调试：输出最终要传递的参数
+        console.log('准备调用 saveLiveStream，参数：', { userId: userId, playUrl: playUrl, requestId: requestId, info: info });
         
         // 无论是否有 requestId，都尝试调用保存接口（后端可能允许空 requestId）
         try {
