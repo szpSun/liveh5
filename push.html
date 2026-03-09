@@ -110,44 +110,6 @@
       margin: 16px 0 8px;
       color: #fff;
     }
-    .qr-log {
-      padding: 12px;
-      background: rgba(255,255,255,0.06);
-      border-radius: 8px;
-      font-size: 12px;
-      max-height: 50vh;
-      overflow-y: auto;
-    }
-    .qr-log-item {
-      margin: 12px 0;
-      padding: 10px;
-      background: rgba(0,0,0,0.25);
-      border-radius: 8px;
-      word-break: break-all;
-      border-left: 3px solid #51cf66;
-    }
-    .qr-log-item:first-child { margin-top: 0; }
-    .qr-log-item-frame {
-      display: block;
-      width: 100%;
-      max-height: 28vh;
-      object-fit: contain;
-      border-radius: 6px;
-      background: #0f0f1a;
-      margin-bottom: 8px;
-    }
-    .qr-log-item-meta { color: #868e96; font-size: 11px; margin-bottom: 4px; }
-    .qr-log-item-data { font-size: 12px; }
-    .qr-log-item time { color: #868e96; font-size: 11px; margin-right: 8px; }
-    .qr-log-empty { color: #868e96; }
-    .btn-clear {
-      margin-top: 8px;
-      padding: 8px 14px;
-      font-size: 13px;
-      background: rgba(255,255,255,0.1);
-      color: #eee;
-      width: 100%;
-    }
     .tip {
       font-size: 12px;
       color: #868e96;
@@ -198,8 +160,6 @@
     <span id="requestTimer" class="request-timer"></span>
   </div>
 
-  <div class="qr-log" id="qrLog"></div>
-  <button type="button" class="btn-clear" id="btnClearLog">清空记录</button>
   <!-- 隐藏的音频播放元素，保留功能但不显示UI -->
   <section class="play-urls" style="display: none;">
     <div class="audio-play-wrap">
@@ -290,8 +250,6 @@
       const remoteAudio = document.getElementById('remoteAudio');
       const canvas = document.getElementById('canvas');
       const ctx = canvas.getContext('2d');
-      const qrLogEl = document.getElementById('qrLog');
-      const btnClearLog = document.getElementById('btnClearLog');
       const liveStatusEl = document.getElementById('liveStatus');
       const liveStatusDot = document.getElementById('liveStatusDot');
       const liveStatusText = document.getElementById('liveStatusText');
@@ -594,10 +552,10 @@
         if (data === lastQrData && (now - lastQrTime) < DEDUPE_MS) return false;
         lastQrData = data;
         lastQrTime = now;
+        // 保存到本地存储（保留后端逻辑需要的数据）
         const list = loadResults();
         list.push({ data: data, time: now, frameDataUrl: frameDataUrl || null });
         saveResults(list);
-        renderLog();
         
         // 扫码成功后语音提醒
         speakText('扫码成功');
@@ -627,31 +585,6 @@
         return true;
       }
 
-      function renderLog() {
-        const list = loadResults();
-        if (list.length === 0) {
-          qrLogEl.innerHTML = '<div class="qr-log-empty">暂无记录，推流后对准二维码即可识别并保存（每条会显示该帧画面与扫到的内容）</div>';
-          return;
-        }
-        qrLogEl.innerHTML = list
-          .slice()
-          .reverse()
-          .map(function (item) {
-            const t = new Date(item.time);
-            const timeStr = t.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            const imgHtml = item.frameDataUrl
-              ? '<img class="qr-log-item-frame" src="' + item.frameDataUrl.replace(/"/g, '&quot;') + '" alt="识别时的画面" />'
-              : '';
-            return '<div class="qr-log-item">' + imgHtml + '<div class="qr-log-item-meta"><time>' + timeStr + '</time></div><div class="qr-log-item-data">' + escapeHtml(item.data) + '</div></div>';
-          })
-          .join('');
-      }
-
-      function escapeHtml(s) {
-        const div = document.createElement('div');
-        div.textContent = s;
-        return div.innerHTML;
-      }
 
       function stopQrLoop() {
         qrRunning = false;
@@ -687,12 +620,6 @@
         setStatus('当前环境无法使用摄像头/麦克风。请用 HTTPS 或 localhost 打开此页（如 npx serve . -p 8080 后访问 http://localhost:8080）。', 'error');
       }
 
-      renderLog();
-
-      btnClearLog.addEventListener('click', function () {
-        saveResults([]);
-        renderLog();
-      });
 
       function getStream(facingMode) {
         return navigator.mediaDevices.getUserMedia({
