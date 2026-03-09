@@ -529,20 +529,40 @@
         return trimmed;
       }
 
-      // 语音提醒功能
-      function speakText(text) {
-        if ('speechSynthesis' in window) {
+      // 生成"滴"声提示音
+      function playBeep() {
+        try {
+          var audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          var oscillator = audioContext.createOscillator();
+          var gainNode = audioContext.createGain();
+          
+          oscillator.connect(gainNode);
+          gainNode.connect(audioContext.destination);
+          
+          // 设置音调：800Hz，听起来像"滴"
+          oscillator.frequency.value = 800;
+          oscillator.type = 'sine';
+          
+          // 设置音量包络：快速上升，然后快速下降
+          gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+          gainNode.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + 0.01);
+          gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+          
+          oscillator.start(audioContext.currentTime);
+          oscillator.stop(audioContext.currentTime + 0.1);
+          
+          console.log('播放提示音：滴');
+        } catch (e) {
+          console.warn('播放提示音失败：', e);
+          // 如果Web Audio API失败，尝试使用语音合成
           try {
-            // 停止当前正在播放的语音
-            window.speechSynthesis.cancel();
-            var utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = 'zh-CN';
-            utterance.rate = 1.0; // 语速
-            utterance.pitch = 1.0; // 音调
-            utterance.volume = 1.0; // 音量
-            window.speechSynthesis.speak(utterance);
-          } catch (e) {
-            console.warn('语音播报失败：', e);
+            if ('speechSynthesis' in window) {
+              var utterance = new SpeechSynthesisUtterance('滴');
+              utterance.volume = 0.5;
+              window.speechSynthesis.speak(utterance);
+            }
+          } catch (e2) {
+            console.warn('备用提示音也失败：', e2);
           }
         }
       }
@@ -557,8 +577,10 @@
         list.push({ data: data, time: now, frameDataUrl: frameDataUrl || null });
         saveResults(list);
         
-        // 扫码成功后语音提醒
-        speakText('扫码成功');
+        // 扫码成功后提示
+        console.log('扫码成功，二维码内容：', data);
+        // 播放"滴"声提示
+        playBeep();
         
         // 上传二维码截图到服务器
         if (frameDataUrl && loginData && loginData.userId) {
