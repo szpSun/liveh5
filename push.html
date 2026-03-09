@@ -76,7 +76,7 @@
     .status.error { color: #ff6b6b; }
     .status.ok { color: #51cf66; }
     .status.pending { color: #ffd43b; }
-    .btn-wrap { display: flex; gap: 12px; margin-bottom: 12px; align-items: center; }
+    .btn-wrap { display: flex; gap: 12px; margin-bottom: 12px; align-items: center; flex-wrap: wrap; }
     button {
       flex: 1;
       padding: 14px 20px;
@@ -86,12 +86,17 @@
       border-radius: 10px;
       cursor: pointer;
       transition: opacity 0.2s;
+      min-width: 0;
     }
     button:active { opacity: 0.8; }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
     #btnStart { background: linear-gradient(135deg, #339af0, #228be6); color: #fff; }
     #btnStop { background: #495057; color: #fff; }
     #btnSwitch { background: rgba(255,255,255,0.15); color: #eee; flex: 0 0 auto; }
+    /* 确保请求直播和停止直播按钮横向排列 */
+    #btnStart, #btnStop {
+      flex: 1 1 calc(50% - 6px);
+    }
     .request-timer {
       margin-left: auto;
       font-size: 12px;
@@ -193,11 +198,8 @@
     <span id="requestTimer" class="request-timer"></span>
   </div>
 
-  <h2 class="section-title">识别记录</h2>
   <div class="qr-log" id="qrLog"></div>
   <button type="button" class="btn-clear" id="btnClearLog">清空记录</button>
-
-  <p class="tip">需用 <strong>HTTPS 或 localhost</strong> 打开此页。发起直播并开始推流后会对画面做二维码识别，<strong>每次识别到二维码会保存该帧画面与内容</strong>，显示在下方的识别记录中（同一二维码 3 秒内不重复）。</p>
   <!-- 隐藏的音频播放元素，保留功能但不显示UI -->
   <section class="play-urls" style="display: none;">
     <div class="audio-play-wrap">
