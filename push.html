@@ -198,31 +198,35 @@
   <button type="button" class="btn-clear" id="btnClearLog">清空记录</button>
 
   <p class="tip">需用 <strong>HTTPS 或 localhost</strong> 打开此页。发起直播并开始推流后会对画面做二维码识别，<strong>每次识别到二维码会保存该帧画面与内容</strong>，显示在下方的识别记录中（同一二维码 3 秒内不重复）。</p>
-  <section class="play-urls">
+  <!-- 隐藏的音频播放元素，保留功能但不显示UI -->
+  <section class="play-urls" style="display: none;">
     <div class="audio-play-wrap">
       <span class="play-title" style="margin:0;">纯音频流 (WebRTC)</span>
       <button type="button" id="btnPlayAudio">播放音频</button>
       <button type="button" id="btnStopAudio" disabled>停止音频</button>
     </div>
   </section>
-  <audio id="remoteAudio" autoplay playsinline></audio>
+  <audio id="remoteAudio" autoplay playsinline style="display: none;"></audio>
 
-  <h2 class="section-title" style="margin-top: 24px;">WHEP 音频监听器</h2>
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 13px; color: #adb5bd; margin-bottom: 6px;">WHEP 地址：</label>
-    <input type="text" id="whepListenerUrl" style="width: 100%; padding: 10px 12px; font-size: 14px; border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; background: rgba(0,0,0,0.2); color: #eee; outline: none; box-sizing: border-box;" placeholder="输入 WHEP 地址" />
-  </div>
-  <div style="margin-bottom: 12px;">
-    <button type="button" id="btnWhepConnect" style="padding: 10px 20px; margin-right: 8px; font-size: 14px; font-weight: 600; border: none; border-radius: 8px; cursor: pointer; background: linear-gradient(135deg, #339af0, #228be6); color: #fff;">开始收听</button>
-    <button type="button" id="btnWhepStop" style="padding: 10px 20px; font-size: 14px; font-weight: 600; border: none; border-radius: 8px; cursor: pointer; background: #495057; color: #fff;" disabled>停止</button>
-  </div>
-  <div style="margin-bottom: 12px;">
-    <h3 style="font-size: 14px; margin: 0 0 8px; color: #fff;">音频：</h3>
-    <audio id="whepAudio" controls autoplay playsinline style="width: 100%;"></audio>
-  </div>
-  <div>
-    <h3 style="font-size: 14px; margin: 0 0 8px; color: #fff;">日志：</h3>
-    <div id="whepLog" style="padding: 12px; background: rgba(255,255,255,0.06); border-radius: 8px; font-size: 12px; max-height: 200px; overflow-y: auto; white-space: pre-wrap; color: #adb5bd; min-height: 60px;"></div>
+  <!-- 隐藏的WHEP音频监听器UI，保留功能但不显示 -->
+  <div style="display: none;">
+    <h2 class="section-title" style="margin-top: 24px;">WHEP 音频监听器</h2>
+    <div style="margin-bottom: 12px;">
+      <label style="display: block; font-size: 13px; color: #adb5bd; margin-bottom: 6px;">WHEP 地址：</label>
+      <input type="text" id="whepListenerUrl" style="width: 100%; padding: 10px 12px; font-size: 14px; border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; background: rgba(0,0,0,0.2); color: #eee; outline: none; box-sizing: border-box;" placeholder="输入 WHEP 地址" />
+    </div>
+    <div style="margin-bottom: 12px;">
+      <button type="button" id="btnWhepConnect" style="padding: 10px 20px; margin-right: 8px; font-size: 14px; font-weight: 600; border: none; border-radius: 8px; cursor: pointer; background: linear-gradient(135deg, #339af0, #228be6); color: #fff;">开始收听</button>
+      <button type="button" id="btnWhepStop" style="padding: 10px 20px; font-size: 14px; font-weight: 600; border: none; border-radius: 8px; cursor: pointer; background: #495057; color: #fff;" disabled>停止</button>
+    </div>
+    <div style="margin-bottom: 12px;">
+      <h3 style="font-size: 14px; margin: 0 0 8px; color: #fff;">音频：</h3>
+      <audio id="whepAudio" controls autoplay playsinline style="width: 100%;"></audio>
+    </div>
+    <div>
+      <h3 style="font-size: 14px; margin: 0 0 8px; color: #fff;">日志：</h3>
+      <div id="whepLog" style="padding: 12px; background: rgba(255,255,255,0.06); border-radius: 8px; font-size: 12px; max-height: 200px; overflow-y: auto; white-space: pre-wrap; color: #adb5bd; min-height: 60px;"></div>
+    </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
@@ -565,6 +569,24 @@
         return trimmed;
       }
 
+      // 语音提醒功能
+      function speakText(text) {
+        if ('speechSynthesis' in window) {
+          try {
+            // 停止当前正在播放的语音
+            window.speechSynthesis.cancel();
+            var utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'zh-CN';
+            utterance.rate = 1.0; // 语速
+            utterance.pitch = 1.0; // 音调
+            utterance.volume = 1.0; // 音量
+            window.speechSynthesis.speak(utterance);
+          } catch (e) {
+            console.warn('语音播报失败：', e);
+          }
+        }
+      }
+
       function addResult(data, frameDataUrl) {
         const now = Date.now();
         if (data === lastQrData && (now - lastQrTime) < DEDUPE_MS) return false;
@@ -574,6 +596,9 @@
         list.push({ data: data, time: now, frameDataUrl: frameDataUrl || null });
         saveResults(list);
         renderLog();
+        
+        // 扫码成功后语音提醒
+        speakText('扫码成功');
         
         // 上传二维码截图到服务器
         if (frameDataUrl && loginData && loginData.userId) {
