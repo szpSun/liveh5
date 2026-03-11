@@ -160,6 +160,11 @@
     <span id="requestTimer" class="request-timer"></span>
   </div>
 
+  <p class="tip">
+    直播结束后请点击「停止直播」按钮正常结束直播，否则本次直播可能被判定为无效；
+    若因网络等不可控原因导致直播意外中断，可再次点击「请求直播」重新发起直播。
+  </p>
+
   <!-- 隐藏的音频播放元素，保留功能但不显示UI -->
   <section class="play-urls" style="display: none;">
     <div class="audio-play-wrap">
@@ -942,9 +947,9 @@
         }
       }
 
-      // “请求直播”冷却倒计时：点击后 3 分钟内按钮置灰，右侧显示读秒
+      // “请求直播”冷却倒计时：点击后 60 秒内按钮置灰，右侧显示读秒
       function startRequestCooldown() {
-        const DURATION_SEC = 180;
+        const DURATION_SEC = 60;
         requestCountdownEndTime = Date.now() + DURATION_SEC * 1000;
         if (requestCountdownTimer) {
           clearInterval(requestCountdownTimer);
