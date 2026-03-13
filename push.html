@@ -1267,7 +1267,7 @@
       btnWhepStop.addEventListener('click', stopWhepListen);
       window.addEventListener('beforeunload', whepCleanup);
 
-      // 页面加载完成后自动开始收听 WHEP 音频流
+      // 页面加载完成后自动开始收听 WHEP 音频流（admin + admin1）
       function autoStartWhepListen() {
         // 确保登录数据已加载
         if (!loginData || !loginData.mobile) {
@@ -1276,18 +1276,9 @@
           return;
         }
         
-        // 初始化 URL
-        var url = initWhepUrl();
-        if (!url) {
-          console.warn('[自动WHEP] 无法构建 URL');
-          return;
-        }
-        
-        console.log('[自动WHEP] 自动开始收听音频流:', url);
-        whepLog('自动开始连接 WHEP 音频流...');
-        startWhepListen().catch((e) => {
+        console.log('[自动WHEP] 自动开始收听音频流 (admin + admin1)');
+        startAudioPlay().catch((e) => {
           console.error('[自动WHEP] 连接失败:', e);
-          whepLog('自动连接失败:', e && e.message ? e.message : e);
         });
       }
 
