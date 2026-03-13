@@ -232,13 +232,13 @@
       
       // 音频播放 URL 构建函数（延迟构建，确保手机号已加载）
       // WHEP 协议用于播放/拉流，WHIP 协议用于推流
-      function getWhepAudioUrl() {
+      function getWhepAudioUrl(app) {
         var mobile = loginData.mobile || '';
         if (!mobile) {
           console.error('无法构建音频播放 URL：手机号为空');
           return null;
         }
-        return BASE + '/rtc/v1/whep/?app=audio&stream=' + encodeURIComponent(mobile);
+        return BASE + '/rtc/v1/whep/?app=' + encodeURIComponent(app) + '&stream=' + encodeURIComponent(mobile);
       }
       const STORAGE_KEY = 'liveh5_qr_results';
       const DEDUPE_MS = 3000;
@@ -263,7 +263,8 @@
       let pc = null;
       let localStream = null;
       let currentFacingMode = 'user';
-      let playPc = null;
+      let playPcAdmin = null;
+      let playPcAdmin1 = null;
       let qrRunning = false;
       let rafId = null;
       let lastQrData = '';
@@ -760,8 +761,11 @@
             var errorMsg = '服务器返回 ' + response.status + (text ? ': ' + text.slice(0, 200) : '');
             console.error('推流失败：', errorMsg);
             // 如果推流失败时音频正在播放，记录日志
-            if (playPc) {
-              console.warn('推流失败时音频播放连接状态：', playPc.connectionState);
+            if (playPcAdmin) {
+              console.warn('推流失败时 admin 音频播放连接状态：', playPcAdmin.connectionState);
+            }
+            if (playPcAdmin1) {
+              console.warn('推流失败时 admin1 音频播放连接状态：', playPcAdmin1.connectionState);
             }
             throw new Error(errorMsg);
           }
@@ -824,94 +828,131 @@
       }
 
       async function startAudioPlay() {
-        if (playPc) return;
+        if (playPcAdmin || playPcAdmin1) return;
         if (!loginData || !loginData.mobile) {
           setStatus('无法播放音频：未获取到手机号', 'error');
           return;
         }
         
-        var whepAudioUrl = getWhepAudioUrl();
-        if (!whepAudioUrl) {
+        var whepAudioUrlAdmin = getWhepAudioUrl('admin');
+        var whepAudioUrlAdmin1 = getWhepAudioUrl('admin1');
+        if (!whepAudioUrlAdmin || !whepAudioUrlAdmin1) {
           setStatus('无法播放音频：手机号无效', 'error');
           return;
         }
         
-        console.log('音频播放 URL：', whepAudioUrl);
+        console.log('音频播放 URL (admin)：', whepAudioUrlAdmin);
+        console.log('音频播放 URL (admin1)：', whepAudioUrlAdmin1);
         console.log('手机号：', loginData.mobile);
         
         btnPlayAudio.disabled = true;
         setStatus('正在连接音频流…', 'pending');
+        
+        // 创建合并的音频流
+        var mergedStream = new MediaStream();
+        
+        // 连接函数：创建一个 WebRTC 连接并添加到合并流
+        async function connectStream(url, appName) {
+          return new Promise(async (resolve, reject) => {
+            try {
+              var pc = new RTCPeerConnection({
+                iceServers: [
+                  { urls: 'stun:stun.l.google.com:19302' },
+                  { urls: 'stun:stun1.l.google.com:19302' },
+                  { urls: 'stun:stun2.l.google.com:19302' },
+                  { urls: 'stun:stun3.l.google.com:19302' },
+                  { urls: 'stun:stun4.l.google.com:19302' }
+                ],
+                iceCandidatePoolSize: 10
+              });
+              
+              // 保存连接引用
+              if (appName === 'admin') {
+                playPcAdmin = pc;
+              } else if (appName === 'admin1') {
+                playPcAdmin1 = pc;
+              }
+              
+              pc.addTransceiver('audio', { direction: 'recvonly' });
+              
+              pc.ontrack = function (e) {
+                console.log('收到 ' + appName + ' 音频轨道');
+                if (e.track) {
+                  mergedStream.addTrack(e.track);
+                  // 如果还没有设置到 audio 元素，则设置合并流
+                  if (!remoteAudio.srcObject) {
+                    remoteAudio.srcObject = mergedStream;
+                    remoteAudio.play().catch(function(err) {
+                      console.warn('自动播放失败，需要用户交互：', err);
+                    });
+                  }
+                }
+              };
+              
+              pc.addEventListener('connectionstatechange', function () {
+                if (pc.connectionState === 'connected') {
+                  console.log(appName + ' 音频流已连接');
+                  // 检查两个连接是否都连接成功
+                  if (playPcAdmin && playPcAdmin.connectionState === 'connected' &&
+                      playPcAdmin1 && playPcAdmin1.connectionState === 'connected') {
+                    setStatus('音频流已连接，正在播放', 'ok');
+                  }
+                } else if (pc.connectionState === 'failed') {
+                  console.error(appName + ' 音频连接失败');
+                  // 如果推流正在进行，不更新状态栏
+                  if (!isPushing) {
+                    setStatus('音频连接失败', 'error');
+                  }
+                }
+              });
+              
+              // WHEP 协议流程
+              const offer = await pc.createOffer();
+              await pc.setLocalDescription(offer);
+              const localSdp = pc.localDescription && pc.localDescription.sdp;
+              if (!localSdp) {
+                throw new Error('生成 SDP 失败');
+              }
+              
+              console.log('发送音频播放请求 (' + appName + ')，URL：', url);
+              var res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/sdp' },
+                body: localSdp
+              });
+              
+              console.log(appName + ' 音频播放响应状态：', res.status, res.statusText);
+              
+              if (!res.ok) {
+                var text = '';
+                try { text = await res.text(); } catch (_) {}
+                var errorMsg = appName + ' WHEP POST 失败：' + res.status + (text ? ' - ' + text.slice(0, 100) : '');
+                console.error('音频播放失败，但不影响推流：', errorMsg);
+                throw new Error(errorMsg);
+              }
+              
+              const answerSdp = await res.text();
+              await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+              
+              resolve();
+            } catch (e) {
+              reject(e);
+            }
+          });
+        }
+        
         try {
-          // 优化：使用多个 STUN 服务器和预收集 ICE 候选，加快连接速度
-          playPc = new RTCPeerConnection({
-            iceServers: [
-              { urls: 'stun:stun.l.google.com:19302' },
-              { urls: 'stun:stun1.l.google.com:19302' },
-              { urls: 'stun:stun2.l.google.com:19302' },
-              { urls: 'stun:stun3.l.google.com:19302' },
-              { urls: 'stun:stun4.l.google.com:19302' }
-            ],
-            iceCandidatePoolSize: 10 // 预收集候选，加快连接
-          });
-          // 明确指定只接收音频流
-          playPc.addTransceiver('audio', { direction: 'recvonly' });
-          playPc.ontrack = function (e) {
-            if (e.streams && e.streams[0]) {
-              remoteAudio.srcObject = e.streams[0];
-            } else if (e.track) {
-              var s = new MediaStream();
-              s.addTrack(e.track);
-              remoteAudio.srcObject = s;
-            }
-          };
-          playPc.addEventListener('connectionstatechange', function () {
-            if (playPc && playPc.connectionState === 'failed') {
-              setStatus('音频连接失败', 'error');
-            } else if (playPc && playPc.connectionState === 'connected') {
-              setStatus('音频流已连接，正在播放', 'ok');
-            }
-          });
+          // 同时连接两个流
+          await Promise.all([
+            connectStream(whepAudioUrlAdmin, 'admin'),
+            connectStream(whepAudioUrlAdmin1, 'admin1')
+          ]);
           
-          // WHEP 协议流程（根据服务器实际支持的方式，与 whep-listener 保持一致）：
-          // 1. 客户端创建 offer
-          // 2. POST 到 WHEP endpoint（body 是 offer SDP），服务器返回 answer SDP
-          // 3. 客户端设置远程 answer
-          const offer = await playPc.createOffer();
-          await playPc.setLocalDescription(offer);
-          const localSdp = playPc.localDescription && playPc.localDescription.sdp;
-          if (!localSdp) {
-            throw new Error('生成 SDP 失败');
-          }
-          
-          console.log('发送音频播放请求，URL：', whepAudioUrl);
-          var res = await fetch(whepAudioUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/sdp' },
-            body: localSdp
-          });
-          
-          console.log('音频播放响应状态：', res.status, res.statusText);
-          
-          if (!res.ok) {
-            var text = '';
-            try { text = await res.text(); } catch (_) {}
-            var errorMsg = 'WHEP POST 失败：' + res.status + (text ? ' - ' + text.slice(0, 100) : '');
-            console.error('音频播放失败，但不影响推流：', errorMsg);
-            throw new Error(errorMsg);
-          }
-          
-          const answerSdp = await res.text();
-          await playPc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
-          
-          // 状态会在 connectionstatechange 事件中更新为 'connected' 时自动设置为 'ok'
-          // 这里先设置为 pending，等待连接建立
           btnPlayAudio.disabled = true;
           btnStopAudio.disabled = false;
         } catch (e) {
           console.error('播放音频异常：', e);
-          // 音频播放失败不影响推流，只更新音频相关状态
           var errorMsg = '播放音频失败: ' + (e.message || e.name);
-          // 如果推流正在进行，状态栏显示推流状态，音频错误只在控制台显示
           if (!isPushing) {
             setStatus(errorMsg, 'error');
           } else {
@@ -923,13 +964,21 @@
       }
 
       function stopAudioPlay() {
-        if (playPc) {
+        if (playPcAdmin) {
           try {
-            playPc.close();
+            playPcAdmin.close();
           } catch (e) {
-            console.warn('关闭音频连接时出错：', e);
+            console.warn('关闭 admin 音频连接时出错：', e);
           }
-          playPc = null;
+          playPcAdmin = null;
+        }
+        if (playPcAdmin1) {
+          try {
+            playPcAdmin1.close();
+          } catch (e) {
+            console.warn('关闭 admin1 音频连接时出错：', e);
+          }
+          playPcAdmin1 = null;
         }
         if (remoteAudio && remoteAudio.srcObject) {
           try {
