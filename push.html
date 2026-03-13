@@ -165,12 +165,6 @@
     若因网络等不可控原因导致直播意外中断，可再次点击「请求直播」重新发起直播。
   </p>
 
-  <div style="text-align: center; margin-top: 16px;">
-    <button type="button" id="btnGotoWhep" style="padding: 10px 20px; font-size: 14px; font-weight: 600; border: none; border-radius: 8px; cursor: pointer; background: rgba(255,255,255,0.15); color: #eee; transition: opacity 0.2s;">
-      进入 WHEP 页面
-    </button>
-  </div>
-
   <!-- 隐藏的音频播放元素，保留功能但不显示UI -->
   <section class="play-urls" style="display: none;">
     <div class="audio-play-wrap">
@@ -1103,13 +1097,6 @@
       btnPlayAudio.addEventListener('click', startAudioPlay);
       btnStopAudio.addEventListener('click', stopAudioPlay);
       
-      // 进入 WHEP 页面按钮
-      const btnGotoWhep = document.getElementById('btnGotoWhep');
-      if (btnGotoWhep) {
-        btnGotoWhep.addEventListener('click', function() {
-          window.location.href = 'whep-listener.html';
-        });
-      }
 
       // ===== WHEP 监听器功能（完整版） =====
       const whepListenerUrl = document.getElementById('whepListenerUrl');
