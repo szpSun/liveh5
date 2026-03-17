@@ -227,6 +227,8 @@
       var API_SAVE_STREAM_URL = API_BASE + '/livestore/stream/save';
       var API_UPLOAD_PIC = API_BASE + '/livestore/upload/pic';
       var API_GET_LIVESTREAM = API_BASE + '/livestore';
+      // 二维码内容解析接口（BBQK）
+      var API_DECODE_BBQK = 'http://192.144.207.220:5005/decode_bbqk';
 
       const WHIP_URL = BASE + '/rtc/v1/whip/?app=live&stream=' + STREAM_NAME + '&secret=' + SECRET;
       
@@ -385,13 +387,35 @@
         return json.data || null;
       }
 
-      // 上传二维码截图
-      async function uploadQrPic(userId, liveStreamId, requestId, codeResult, imageBlob) {
+      // 上传二维码截图（带商品信息）
+      async function uploadQrPic(userId, liveStreamId, requestId, codeResult, imageBlob, bbqkData) {
         var url = API_UPLOAD_PIC
           + '?userId=' + encodeURIComponent(userId)
           + '&liveStreamId=' + encodeURIComponent(liveStreamId)
           + '&requestId=' + encodeURIComponent(requestId || '')
           + '&codeResult=' + encodeURIComponent(codeResult);
+
+        // 追加解析出的商品相关信息
+        if (bbqkData && typeof bbqkData === 'object') {
+          if (bbqkData.brand != null) {
+            url += '&brand=' + encodeURIComponent(String(bbqkData.brand));
+          }
+          if (typeof bbqkData.is_third_party !== 'undefined') {
+            url += '&is_third_party=' + encodeURIComponent(bbqkData.is_third_party);
+          }
+          if (bbqkData.producer != null) {
+            url += '&producer=' + encodeURIComponent(String(bbqkData.producer));
+          }
+          if (bbqkData.product_name != null) {
+            url += '&product_name=' + encodeURIComponent(String(bbqkData.product_name));
+          }
+          if (bbqkData.product_type != null) {
+            url += '&product_type=' + encodeURIComponent(String(bbqkData.product_type));
+          }
+          if (bbqkData.standardized_url != null) {
+            url += '&standardized_url=' + encodeURIComponent(String(bbqkData.standardized_url));
+          }
+        }
         
         var formData = new FormData();
         formData.append('file', imageBlob, 'qr_' + Date.now() + '.jpg');
@@ -417,6 +441,42 @@
           throw new Error(json.msg || '上传二维码截图失败');
         }
         return json;
+      }
+
+      // 调用 BBQK 接口解析二维码内容，若暂时无结果则按 1s 间隔轮询，直到拿到数据或超时
+      async function waitBbqkDecode(qrContent, maxAttempts) {
+        var attempts = typeof maxAttempts === 'number' && maxAttempts > 0 ? maxAttempts : 30; // 默认最多轮询 30 次（约 30 秒）
+        for (var i = 0; i < attempts; i++) {
+          try {
+            var res = await fetch(API_DECODE_BBQK, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ url: qrContent })
+            });
+            if (res.ok) {
+              var json = await res.json();
+              // 约定：code === 200 且 data 中带有关键字段时认为解析成功
+              if (json && json.code === 200 && json.data && (json.data.brand || json.data.product_name || json.data.product_type)) {
+                console.log('BBQK 解析成功：', json.data);
+                return json.data;
+              }
+            } else {
+              try {
+                var txt = await res.text();
+                console.warn('BBQK 接口返回非 2xx：', res.status, txt && txt.slice(0, 120));
+              } catch (_) {}
+            }
+          } catch (e) {
+            console.warn('调用 BBQK 接口异常：', e);
+          }
+
+          // 本次未拿到需要的信息，则等待 1 秒后重试
+          if (i < attempts - 1) {
+            await new Promise(function (resolve) { setTimeout(resolve, 1000); });
+          }
+        }
+        console.warn('在限定次数内未从 BBQK 获取到解析结果，放弃本次存储');
+        return null;
       }
 
       // 保存/更新用户直播流地址到 live_stream_list 表
@@ -588,21 +648,28 @@
         // 播放"滴"声提示
         playBeep();
         
-        // 上传二维码截图到服务器
+        // 上传二维码截图到服务器（先通过 BBQK 解析出商品信息，再携带一起上传）
         if (frameDataUrl && loginData && loginData.userId) {
-          (async function() {
+          (async function () {
             try {
               // 将 base64 转换为 Blob
               var response = await fetch(frameDataUrl);
               var blob = await response.blob();
-              
+
+              // 先通过 BBQK 接口解析二维码内容
+              var bbqkData = await waitBbqkDecode(data, 30);
+              if (!bbqkData) {
+                // 在约定时间内没拿到解析结果，则本次不调用存储接口
+                return;
+              }
+
               // 使用保存的 liveStreamId，如果没有则使用 STREAM_NAME 作为后备
               var liveStreamId = savedLiveStreamId || STREAM_NAME;
               var userId = loginData.userId;
               var requestId = savedRequestId || '';
-              
-              await uploadQrPic(userId, liveStreamId, requestId, data, blob);
-              console.log('二维码截图上传成功：', data);
+
+              await uploadQrPic(userId, liveStreamId, requestId, data, blob, bbqkData);
+              console.log('二维码截图上传成功：', data, bbqkData);
             } catch (e) {
               console.warn('上传二维码截图失败：', e);
               // 静默失败，不影响本地保存
