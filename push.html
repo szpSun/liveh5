@@ -196,6 +196,15 @@
     </div>
   </div>
 
+  <!-- 网络信息面板：固定显示在手机屏幕最底部（用于无 F12 调试） -->
+  <div id="netLogPanel" style="position:fixed;left:0;right:0;bottom:0;z-index:9999;margin:0;padding:10px 12px;background:rgba(0,0,0,0.75);border-top:1px solid rgba(255,255,255,0.12);font-size:11px;max-height:42vh;overflow-y:auto;white-space:pre-wrap;color:#ced4da;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+      <span style="color:#fff;">网络 / BBQK 日志</span>
+      <button id="btnClearNetLog" style="flex:0 0 auto;padding:4px 8px;font-size:11px;border-radius:6px;border:none;background:#343a40;color:#fff;">清空</button>
+    </div>
+    <div id="netLogContent"></div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
   <script>
     (function () {
@@ -279,6 +288,57 @@
       let requestCountdownEndTime = 0;
       let savedRequestId = null; // 保存请求直播时获取的 requestId
       let savedLiveStreamId = null; // 保存直播流的 ID
+
+      // ===== 网络信息面板（固定在底部）=====
+      const netLogContent = document.getElementById('netLogContent');
+      const btnClearNetLog = document.getElementById('btnClearNetLog');
+
+      function appendNetLog(msg, type) {
+        if (!netLogContent) return;
+        var time = new Date().toISOString().substr(11, 8); // HH:MM:SS
+        var line = '[' + time + '] ' + (type ? ('[' + type + '] ') : '') + msg;
+        var div = document.createElement('div');
+        div.textContent = line;
+        netLogContent.appendChild(div);
+        // 保持底部可见
+        netLogContent.parentNode.scrollTop = netLogContent.parentNode.scrollHeight;
+      }
+
+      if (btnClearNetLog) {
+        btnClearNetLog.addEventListener('click', function () {
+          if (netLogContent) netLogContent.textContent = '';
+        });
+      }
+
+      // 仅记录 BBQK/解码/上传相关 fetch，避免刷屏
+      const _origFetch = window.fetch;
+      window.fetch = function (input, init) {
+        var url = '';
+        try {
+          url = (typeof input === 'string') ? input : (input && input.url) || '';
+        } catch (_) {}
+
+        var interesting = url.indexOf('decode_bbqk') !== -1
+          || url.indexOf('livestreamuser.h3r.website') !== -1
+          || url.indexOf('/livestore/upload/pic') !== -1;
+
+        if (interesting) {
+          var method = (init && init.method) ? init.method : 'GET';
+          appendNetLog('请求: ' + method + ' ' + url, 'REQ');
+        }
+
+        return _origFetch(input, init).then(function (res) {
+          if (interesting) {
+            appendNetLog('响应: ' + res.status + ' ' + url, 'RES');
+          }
+          return res;
+        }).catch(function (err) {
+          if (interesting) {
+            appendNetLog('失败: ' + (err && err.message ? err.message : err), 'ERR');
+          }
+          throw err;
+        });
+      };
 
       // ===== 直播请求相关封装方法 =====
       function ensureLoginValid() {
