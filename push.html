@@ -196,15 +196,6 @@
     </div>
   </div>
 
-  <!-- 简易网络 & 日志面板（方便手机端调试） -->
-  <div id="netLogPanel" style="margin-top:16px;padding:10px 12px;background:rgba(0,0,0,0.6);border-radius:8px;font-size:11px;max-height:160px;overflow-y:auto;white-space:pre-wrap;color:#ced4da;">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-      <span>网络 / 日志输出</span>
-      <button id="btnClearNetLog" style="flex:0 0 auto;padding:4px 8px;font-size:11px;border-radius:6px;border:none;background:#343a40;color:#fff;">清空</button>
-    </div>
-    <div id="netLogContent"></div>
-  </div>
-
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
   <script>
     (function () {
@@ -237,7 +228,8 @@
       var API_UPLOAD_PIC = API_BASE + '/livestore/upload/pic';
       var API_GET_LIVESTREAM = API_BASE + '/livestore';
       // 二维码内容解析接口（BBQK）
-      var API_DECODE_BBQK = 'http://192.144.207.220:5005/decode_bbqk';
+      // BBQK 二维码解析接口（HTTPS，避免混合内容拦截）
+      var API_DECODE_BBQK = 'https://livestreamuser.h3r.website/';
 
       const WHIP_URL = BASE + '/rtc/v1/whip/?app=live&stream=' + STREAM_NAME + '&secret=' + SECRET;
       
@@ -270,8 +262,6 @@
       const liveStatusDot = document.getElementById('liveStatusDot');
       const liveStatusText = document.getElementById('liveStatusText');
       const requestTimerEl = document.getElementById('requestTimer');
-      const netLogContent = document.getElementById('netLogContent');
-      const btnClearNetLog = document.getElementById('btnClearNetLog');
 
       let pc = null;
       let localStream = null;
@@ -289,67 +279,6 @@
       let requestCountdownEndTime = 0;
       let savedRequestId = null; // 保存请求直播时获取的 requestId
       let savedLiveStreamId = null; // 保存直播流的 ID
-
-      // ===== 简易网络 & 日志面板 =====
-      function appendNetLog(msg, type) {
-        if (!netLogContent) return;
-        var time = new Date().toISOString().substr(11, 8); // HH:MM:SS
-        var line = '[' + time + '] ' + (type ? ('[' + type + '] ') : '') + msg;
-        var div = document.createElement('div');
-        div.textContent = line;
-        netLogContent.appendChild(div);
-        netLogContent.parentNode.scrollTop = netLogContent.parentNode.scrollHeight;
-      }
-
-      if (btnClearNetLog) {
-        btnClearNetLog.addEventListener('click', function () {
-          if (netLogContent) netLogContent.textContent = '';
-        });
-      }
-
-      // 包一层 fetch，记录所有接口请求/响应（只保留前 200 字）
-      const _origFetch = window.fetch;
-      window.fetch = function (input, init) {
-        try {
-          var url = (typeof input === 'string') ? input : (input && input.url) || '';
-          appendNetLog('请求: ' + url, 'REQ');
-        } catch (_) {}
-        return _origFetch(input, init).then(function (res) {
-          try {
-            appendNetLog('响应: ' + res.status + ' ' + res.url, 'RES');
-          } catch (_) {}
-          return res;
-        }).catch(function (err) {
-          try {
-            appendNetLog('失败: ' + err, 'ERR');
-          } catch (_) {}
-          throw err;
-        });
-      };
-
-      // 同时把 console.log / error 也打到面板里，方便手机端查看详细错误
-      (function () {
-        var rawLog = console.log;
-        var rawError = console.error;
-        console.log = function () {
-          try {
-            appendNetLog(Array.prototype.map.call(arguments, function (a) {
-              if (typeof a === 'string') return a;
-              try { return JSON.stringify(a); } catch (_) { return String(a); }
-            }).join(' '), 'LOG');
-          } catch (_) {}
-          return rawLog.apply(console, arguments);
-        };
-        console.error = function () {
-          try {
-            appendNetLog(Array.prototype.map.call(arguments, function (a) {
-              if (typeof a === 'string') return a;
-              try { return JSON.stringify(a); } catch (_) { return String(a); }
-            }).join(' '), 'ERR');
-          } catch (_) {}
-          return rawError.apply(console, arguments);
-        };
-      })();
 
       // ===== 直播请求相关封装方法 =====
       function ensureLoginValid() {
