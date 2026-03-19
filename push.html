@@ -136,12 +136,18 @@
     .header-row h1 { margin: 0; }
     .link-out { font-size: 14px; color: #74c0fc; text-decoration: none; }
     .link-out:active { opacity: 0.8; }
+    .quick-links { display: flex; gap: 12px; align-items: center; }
+    .link-test { font-size: 14px; color: #69db7c; text-decoration: none; }
+    .link-test:active { opacity: 0.8; }
   </style>
 </head>
 <body>
   <div class="header-row">
     <h1>直播 + 二维码识别</h1>
-    <a href="index.html" class="link-out">退出</a>
+    <div class="quick-links">
+      <a href="bbqk-test.html" class="link-test">测试接口</a>
+      <a href="index.html" class="link-out">退出</a>
+    </div>
   </div>
   <div class="preview-wrap">
     <video id="localVideo" autoplay playsinline muted></video>
