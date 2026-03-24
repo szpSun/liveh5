@@ -93,6 +93,7 @@
     #btnStart { background: linear-gradient(135deg, #339af0, #228be6); color: #fff; }
     #btnStop { background: #495057; color: #fff; }
     #btnSwitch { background: rgba(255,255,255,0.15); color: #eee; flex: 0 0 auto; }
+    #btnMirror { background: rgba(255,255,255,0.15); color: #eee; flex: 0 0 auto; }
     /* 确保请求直播和停止直播按钮横向排列 */
     #btnStart, #btnStop {
       flex: 1 1 calc(50% - 6px);
@@ -157,6 +158,7 @@
     <button id="btnStart">请求直播</button>
     <button id="btnStop" disabled>停止直播</button>
     <button id="btnSwitch" disabled title="推流过程中可切换前后摄像头">切换摄像头</button>
+    <button id="btnMirror" title="切换预览画面左右翻转">水平翻转</button>
     <span id="requestTimer" class="request-timer"></span>
   </div>
 
@@ -250,6 +252,7 @@
       const btnStart = document.getElementById('btnStart');
       const btnStop = document.getElementById('btnStop');
       const btnSwitch = document.getElementById('btnSwitch');
+      const btnMirror = document.getElementById('btnMirror');
       const btnPlayAudio = document.getElementById('btnPlayAudio');
       const btnStopAudio = document.getElementById('btnStopAudio');
       const remoteAudio = document.getElementById('remoteAudio');
@@ -276,6 +279,7 @@
       let requestCountdownEndTime = 0;
       let savedRequestId = null; // 保存请求直播时获取的 requestId
       let savedLiveStreamId = null; // 保存直播流的 ID
+      let isMirrored = true;
 
       // ===== 直播请求相关封装方法 =====
       function ensureLoginValid() {
@@ -518,6 +522,13 @@
         placeholder.style.display = visible ? 'none' : 'flex';
       }
 
+      function applyPreviewMirror() {
+        localVideo.style.transform = isMirrored ? 'scaleX(-1)' : 'none';
+        if (btnMirror) {
+          btnMirror.textContent = '水平翻转';
+        }
+      }
+
       function loadResults() {
         try {
           const raw = localStorage.getItem(STORAGE_KEY);
@@ -629,7 +640,15 @@
         }
         canvas.width = localVideo.videoWidth;
         canvas.height = localVideo.videoHeight;
-        ctx.drawImage(localVideo, 0, 0);
+        if (isMirrored) {
+          ctx.save();
+          ctx.translate(canvas.width, 0);
+          ctx.scale(-1, 1);
+          ctx.drawImage(localVideo, 0, 0, canvas.width, canvas.height);
+          ctx.restore();
+        } else {
+          ctx.drawImage(localVideo, 0, 0, canvas.width, canvas.height);
+        }
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const code = typeof jsQR !== 'undefined' && jsQR(imageData.data, imageData.width, imageData.height);
         if (code && code.data) {
@@ -684,6 +703,7 @@
             for (var i = 0; i < senders.length; i++) {
               if (senders[i].track && senders[i].track.kind === 'video' && videoTrack) {
                 await senders[i].replaceTrack(videoTrack);
+                await applyVideoSenderDownscale(senders[i]);
               }
               if (senders[i].track && senders[i].track.kind === 'audio' && audioTrack) {
                 await senders[i].replaceTrack(audioTrack);
@@ -743,6 +763,12 @@
           localStream.getTracks().forEach(function (track) {
             pc.addTrack(track, localStream);
           });
+          var senders = pc.getSenders();
+          for (var i = 0; i < senders.length; i++) {
+            if (senders[i] && senders[i].track && senders[i].track.kind === 'video') {
+              await applyVideoSenderDownscale(senders[i]);
+            }
+          }
 
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
@@ -780,6 +806,24 @@
           setStatus('推流失败: ' + (e.message || e.name), 'error');
           stopPush();
           btnStart.disabled = false;
+        }
+      }
+
+      // 仅降低发送端分辨率，不改变摄像头原始画幅比例（不同手机比例可保持）
+      async function applyVideoSenderDownscale(sender) {
+        if (!sender || typeof sender.getParameters !== 'function' || typeof sender.setParameters !== 'function') {
+          return;
+        }
+        try {
+          var params = sender.getParameters() || {};
+          if (!params.encodings || !params.encodings.length) {
+            params.encodings = [{}];
+          }
+          // 下采样 2 倍（像素约降为 1/4），可明显降低上行带宽与推流分辨率
+          params.encodings[0].scaleResolutionDownBy = 2;
+          await sender.setParameters(params);
+        } catch (e) {
+          console.warn('设置视频下采样失败：', e);
         }
       }
 
@@ -1335,6 +1379,11 @@
       });
       btnStop.addEventListener('click', stopPush);
       btnSwitch.addEventListener('click', switchCamera);
+      btnMirror.addEventListener('click', function () {
+        isMirrored = !isMirrored;
+        applyPreviewMirror();
+      });
+      applyPreviewMirror();
       // 进入页面时，尝试预获取媒体权限（不自动轮询状态，只有请求直播后才轮询）
       prewarmMedia();
     })();
